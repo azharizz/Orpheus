@@ -214,11 +214,11 @@ function App() {
   function trackPointer(event) {
     if (!trackable || event.pointerType === "touch") return;
     const movement = Math.hypot(event.nativeEvent.movementX || 0, event.nativeEvent.movementY || 0);
-    if (!movement) return;
+    if (movement < 3) return;
     setWave((current) => {
       const tick = current.tick + 1;
-      const speed = Math.min(1, movement / 28);
-      const amplitude = 5 + speed * 28;
+      const speed = Math.min(1, (movement - 3) / 44);
+      const amplitude = 3 + speed * 21;
       const shape = waveShape[tick % waveShape.length];
       return { tick, samples: [...current.samples.slice(-(maxWavePoints - 1)), shape * amplitude] };
     });
