@@ -67,3 +67,14 @@ test("reselecting the audible track leaves playback running; explicit pause canc
   await t.ready();
   assert.equal(t.video.paused, true);
 });
+
+test("bounded playback stops at the end of a match", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.video.currentTime = 4;
+  await t.play(4.5);
+  t.video.currentTime = 4.51;
+  t.sync();
+  assert.equal(t.video.paused, true);
+  assert.equal(t.stopAt, null);
+});

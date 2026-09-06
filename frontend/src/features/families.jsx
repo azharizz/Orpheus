@@ -118,7 +118,7 @@ function NewFamily({ project, position, disabled, onCreated }) {
   );
 }
 
-function MatchReview({ project, family, disabled, onSeek }) {
+function MatchReview({ project, family, disabled, onPreview }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
   const decided = Object.keys(decisions).length;
@@ -163,9 +163,11 @@ function MatchReview({ project, family, disabled, onSeek }) {
                   <button
                     className="match-cue"
                     type="button"
-                    onClick={() => onSeek(match.refined_anchor_s ?? range[0])}
+                    disabled={disabled}
+                    aria-label={`Play match ${index + 1} from ${time(range[0])} to ${time(range[1])}`}
+                    onClick={() => onPreview(range)}
                   >
-                    <span className="time">{time(range[0])}</span>
+                    <span className="match-play" aria-hidden="true">▶</span>
                     <span>
                       Match {String(index + 1).padStart(2, "0")}
                       <small>{time(range[0])} – {time(range[1])}</small>
@@ -276,7 +278,7 @@ export function FamilyWorkbench({
   candidate,
   state,
   onCandidate,
-  onSeek,
+  onPreview,
 }) {
   const families = Array.isArray(data) ? data : data?.families || [];
   const index = data?.index || project.similarity_index;
@@ -361,7 +363,7 @@ export function FamilyWorkbench({
             project={project}
             family={family}
             disabled={disabled}
-            onSeek={onSeek}
+            onPreview={onPreview}
           />
           {family.warning && <p className="warning">{family.warning}</p>}
           <section className="family-step">

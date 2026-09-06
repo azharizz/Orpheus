@@ -30,9 +30,9 @@ MAX_TAKE_DURATION_S = int(VALUES.get("ORPHEUS_MAX_TAKE_SECONDS", 30))
 if not 1 <= MAX_TAKE_DURATION_S <= 300:
     raise ValueError("Take duration must be between 1 and 300 seconds")
 CONTROLLER_MODELS = [
-    "deepseek/deepseek-v4-flash-vision-exp",
-    "qwen/qwen3.8-flash",
     "meta/muse-spark-1.3-contributor",
+    "qwen/qwen3.8-flash",
+    "deepseek/deepseek-v4-flash-vision-exp",
 ]
 CONTROLLER_MAX_TOKENS = 30000
 AUDIO_MODEL = "google/gemini-2.5-flash-lite"

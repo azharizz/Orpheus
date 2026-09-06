@@ -155,6 +155,15 @@ export function Workspace({ project: p, state }) {
     transport.seek(next);
     setPosition(next);
   };
+  const previewRange = (range) => {
+    const start = Math.max(0, Number(range[0]) || 0);
+    const end = Math.min(p.seconds, Number(range[1]) || start);
+    transport.pause();
+    switchTrack("original");
+    transport.seek(start);
+    setPosition(start);
+    transport.play(end).catch(fail);
+  };
   function switchTrack(next) {
     transport.switchTrack(next)?.catch(fail);
     setTrack(next);
@@ -331,7 +340,7 @@ export function Workspace({ project: p, state }) {
             transport={transport}
             candidate={candidate}
             onCandidate={chooseCandidate}
-            onSeek={seek}
+            onPreview={previewRange}
           />
         </div>
         <Evidence p={p} c={candidate} state={state} />

@@ -6,6 +6,7 @@ export class Transport {
   resume = false;
   track = "original";
   operation = 0;
+  stopAt = null;
   bindAudio = (node) => {
     if (!node) return;
     this.audio = node;
@@ -15,8 +16,9 @@ export class Transport {
       this.audio = null;
     };
   };
-  async play() {
+  async play(stopAt = null) {
     if (!this.video) return;
+    this.stopAt = stopAt;
     const operation = ++this.operation;
     claimMedia(this.video, this.audio);
     try {
@@ -37,6 +39,7 @@ export class Transport {
     this.resume = false;
     this.video?.pause();
     this.audio?.pause();
+    this.stopAt = null;
   }
   seek(value) {
     if (this.video) this.video.currentTime = value;
@@ -63,6 +66,14 @@ export class Transport {
     }
   }
   sync() {
+    if (
+      this.video &&
+      this.stopAt !== null &&
+      this.video.currentTime >= this.stopAt
+    ) {
+      this.pause();
+      return;
+    }
     if (
       this.video &&
       this.audio &&
