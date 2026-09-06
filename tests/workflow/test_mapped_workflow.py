@@ -562,7 +562,12 @@ class MappedWorkflow(unittest.TestCase):
             editor = build(case, Path(d), lambda *a, **kw: None).sub_agents[0]
             tools = {t.__name__: t for t in editor.tools}
             ctx = SimpleNamespace(
-                state={"controller_calls": 29},
+                state={
+                    "controller_calls": 29,
+                    "grafana_receipts": {
+                        "history:": {"status": "ok", "evidence_count": 1}
+                    },
+                },
                 actions=SimpleNamespace(escalate=False, skip_summarization=False),
             )
             self.assertIsNone(
@@ -695,6 +700,13 @@ class MappedWorkflow(unittest.TestCase):
                         {"candidate_id": candidates[-1]["id"] if candidates else ""},
                     ),
                     (
+                        "query_grafana",
+                        {
+                            "topic": "sound",
+                            "candidate_id": candidates[-1]["id"] if candidates else "",
+                        },
+                    ),
+                    (
                         "finish",
                         {
                             "candidate_id": candidates[-1]["id"] if candidates else "",
@@ -726,14 +738,40 @@ class MappedWorkflow(unittest.TestCase):
                 app_name="test",
                 user_id="local",
                 session_id="one",
-                state={"audio_evidence": evidence, "cycle": 0, "notes": []},
+                state={
+                    "audio_evidence": evidence,
+                    "cycle": 0,
+                    "notes": [],
+                    "deterministic_baseline": {"id": "d" * 12},
+                    "grafana_receipts": {
+                        "history:": {
+                            "status": "ok",
+                            "evidence_count": 1,
+                            "receipt_id": "history",
+                        }
+                    },
+                },
             )
+            async def grafana(_pid, topic, candidate_id=""):
+                return {
+                    "status": "ok",
+                    "topic": topic,
+                    "candidate_id": candidate_id,
+                    "evidence_count": 1,
+                    "receipt_id": topic + "-receipt",
+                }
+
             with patch(
                 "orpheus.agent.workflow.ControllerModel", return_value=Scripted()
             ):
                 agent = build(
                     case, folder, lambda event, **kw: logs.append((event, kw))
                 )
+            mcp = patch(
+                "orpheus.agent.workflow_state.obs.investigate", side_effect=grafana
+            )
+            mcp.start()
+            self.addCleanup(mcp.stop)
             runner = Runner(app_name="test", agent=agent, session_service=service)
             async for _ in runner.run_async(
                 user_id="local",

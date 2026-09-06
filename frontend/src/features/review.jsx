@@ -30,11 +30,11 @@ export function Review({ p, c, locked }) {
         <input value={note} onChange={(event) => setNote(event.target.value)} maxLength="500" />
       </label>
       <div className="actions">
-        <button disabled={locked} onClick={() => verdict("approve")}>Approve this preview</button>
+        <button className="primary" disabled={locked} onClick={() => verdict("approve")}>Approve this preview</button>
         <button disabled={locked} onClick={() => verdict("reject")}>Reject this preview</button>
-        <a href={media(p.id, c.id + ".wav")} download>Export WAV</a>
-        <a href={media(p.id, c.master || c.id + ".mp4")} download>Export picture master</a>
-        <a href={media(p.id, c.id + ".json")} download>Export receipt</a>
+        <a className="button-link" href={media(p.id, c.id + ".wav")} download>Export WAV</a>
+        <a className="button-link" href={media(p.id, c.master || c.id + ".mp4")} download>Export picture master</a>
+        <a className="button-link" href={media(p.id, c.id + ".json")} download>Export receipt</a>
       </div>
       <details>
         <summary>Exact audio identity</summary>

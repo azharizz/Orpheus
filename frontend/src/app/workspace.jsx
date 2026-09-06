@@ -129,6 +129,7 @@ export function Workspace({ project: p, state }) {
   const [track, setTrack] = useState("original");
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [panelView, setPanelView] = useState("workflow");
   const [transport] = useState(() => new Transport());
   const recording = useRecording();
   const locked =
@@ -181,46 +182,54 @@ export function Workspace({ project: p, state }) {
       <div className="workspace-heading">
         <div>
           <h1>{p.video_name}</h1>
-          <p>
+          <p className="workspace-meta">
             {time(p.seconds)} · {label(p.status)} ·{" "}
             {p.has_original_audio
               ? "Original audio preserved"
               : "No original soundtrack"}
           </p>
         </div>
-        <a href="/?view=projects">All projects</a>
+        <a className="button-link" href="/?view=projects">
+          All projects
+        </a>
       </div>
       <div className="bench">
         <div className="work">
-          <div className="picture">
-            <video
-              aria-label="Project picture"
-              ref={bindVideo}
-              src={media(p.id, "video.mp4")}
-              poster={media(p.id, "poster.jpg")}
-              preload="metadata"
-              playsInline
-              muted={track !== "original" || recording.active}
-              onTimeUpdate={(event) => {
-                setPosition(event.currentTarget.currentTime);
-                transport.sync();
-              }}
-              onPlay={() => setPlaying(true)}
-              onPause={() => {
-                setPlaying(false);
-                transport.audio?.pause();
-              }}
-              onEnded={() => {
-                transport.pause();
-                stopRecording();
-              }}
-              onError={() =>
-                update({
-                  error:
-                    "Picture could not load. Check the saved project media and retry.",
-                })
-              }
-            />
+          <div className="picture-stage">
+            <div className="picture">
+              <video
+                aria-label="Project picture"
+                ref={bindVideo}
+                src={media(p.id, "video.mp4")}
+                poster={media(p.id, "poster.jpg")}
+                preload="metadata"
+                playsInline
+                muted={track !== "original" || recording.active}
+                onTimeUpdate={(event) => {
+                  setPosition(event.currentTarget.currentTime);
+                  transport.sync();
+                }}
+                onPlay={() => setPlaying(true)}
+                onPause={() => {
+                  setPlaying(false);
+                  transport.audio?.pause();
+                }}
+                onEnded={() => {
+                  transport.pause();
+                  stopRecording();
+                }}
+                onError={() =>
+                  update({
+                    error:
+                      "Picture could not load. Check the saved project media and retry.",
+                  })
+                }
+              />
+            </div>
+            <div className="picture-readout" aria-hidden="true">
+              <span>Picture</span>
+              <span>{time(p.seconds)}</span>
+            </div>
           </div>
           <audio
             ref={transport.bindAudio}
@@ -239,8 +248,9 @@ export function Workspace({ project: p, state }) {
               });
             }}
           />
-          <div className="transport">
+          <div className="transport" aria-label="Picture transport">
             <button
+              className="transport-play primary"
               disabled={recording.active || recording.pending}
               onClick={() =>
                 playing ? transport.pause() : transport.play().catch(fail)
@@ -278,43 +288,55 @@ export function Workspace({ project: p, state }) {
               </button>
             </div>
           </div>
-          <p className="track-status">
+          <p className="track-status" role="status">
             Listening to{" "}
             {track === "original"
               ? "the preserved original"
               : `replacement preview ${candidate?.id}`}
             . Picture time stays fixed when switching.
           </p>
-          <Wave
-            pid={p.id}
-            role="original"
-            state={state}
-            label={
-              p.has_original_audio
-                ? "Original soundtrack"
-                : "Original soundtrack unavailable"
-            }
-            position={position}
-            duration={p.seconds}
-            ranges={familyRanges(familyData)}
-            select={recording.active ? null : seek}
-          />
-          <div className="wave-key" aria-label="Waveform marks">
-            <span><i className="accepted-mark" /> Kept event</span>
-            <span><i className="pending-mark" /> Awaiting review</span>
-          </div>
-          {candidate && (
-            <>
+          <section className="timeline-stack" aria-label="Project soundtracks">
+            <div className="timeline-track timeline-original">
               <Wave
                 pid={p.id}
-                role="candidate"
-                cid={candidate.id}
+                role="original"
                 state={state}
-                label={`Replacement preview · ${candidate.id}`}
+                label={
+                  p.has_original_audio
+                    ? "Original soundtrack"
+                    : "Original soundtrack unavailable"
+                }
                 position={position}
                 duration={p.seconds}
+                ranges={familyRanges(familyData)}
+                select={recording.active ? null : seek}
               />
-              {previews.length > 1 && (
+              <div className="wave-key" aria-label="Waveform marks">
+                <span><i className="accepted-mark" /> Kept event</span>
+                <span><i className="pending-mark" /> Awaiting review</span>
+              </div>
+            </div>
+            <div className="timeline-track timeline-replacement">
+              {candidate ? (
+                <Wave
+                  pid={p.id}
+                  role="candidate"
+                  cid={candidate.id}
+                  state={state}
+                  label={`Replacement preview · ${candidate.id}`}
+                  position={position}
+                  duration={p.seconds}
+                />
+              ) : (
+                <div className="wave wave-empty">
+                  <div className="wave-label">
+                    <span>Replacement preview</span>
+                    <span>Not rendered</span>
+                  </div>
+                  <p>Render a reviewed sound family to compare it here.</p>
+                </div>
+              )}
+              {candidate && previews.length > 1 && (
                 <label className="candidate-picker">
                   Compare another preview
                   <select
@@ -329,22 +351,76 @@ export function Workspace({ project: p, state }) {
                   </select>
                 </label>
               )}
-            </>
-          )}
-          <FamilyWorkbench
-            project={p}
-            data={familyData}
-            state={state}
-            position={position}
-            disabled={locked}
-            transport={transport}
-            candidate={candidate}
-            onCandidate={chooseCandidate}
-            onPreview={previewRange}
-          />
+            </div>
+          </section>
         </div>
-        <Evidence p={p} c={candidate} state={state} />
       </div>
+
+      <button
+        className="workbench-launcher primary"
+        type="button"
+        popoverTarget="sound-workbench"
+      >
+        <span className="workbench-open-label">Open sound workbench</span>
+        <span className="workbench-hide-label">Hide sound workbench</span>
+      </button>
+
+      <aside
+        id="sound-workbench"
+        className="workspace-drawer"
+        popover="auto"
+        role="dialog"
+        aria-labelledby="workbench-title"
+      >
+        <div className="drawer-header">
+          <div>
+            <h2 id="workbench-title">Sound workbench</h2>
+            <p>{p.video_name}</p>
+          </div>
+          <button
+            type="button"
+            popoverTarget="sound-workbench"
+            popoverTargetAction="hide"
+            autoFocus
+          >
+            Close
+          </button>
+        </div>
+        <div className="drawer-tabs" role="tablist" aria-label="Workbench view">
+          <button
+            role="tab"
+            aria-selected={panelView === "workflow"}
+            onClick={() => setPanelView("workflow")}
+          >
+            Family workflow
+          </button>
+          <button
+            role="tab"
+            aria-selected={panelView === "evidence"}
+            onClick={() => setPanelView("evidence")}
+          >
+            Evidence
+          </button>
+        </div>
+        <div className="drawer-body">
+          <div role="tabpanel" hidden={panelView !== "workflow"}>
+            <FamilyWorkbench
+              project={p}
+              data={familyData}
+              state={state}
+              position={position}
+              disabled={locked}
+              transport={transport}
+              candidate={candidate}
+              onCandidate={chooseCandidate}
+              onPreview={previewRange}
+            />
+          </div>
+          <div role="tabpanel" hidden={panelView !== "evidence"}>
+            <Evidence p={p} c={candidate} state={state} />
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }

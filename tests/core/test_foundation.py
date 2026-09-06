@@ -132,6 +132,47 @@ class Foundation(unittest.TestCase):
                 "error", tools["finish"]("", "unsuitable", "reason", ["x"] * 16, ctx)
             )
 
+    def test_agent_render_and_selection_require_grafana_evidence(self):
+        from types import SimpleNamespace
+
+        from orpheus.agent.workflow import EditorTools
+
+        runtime = EditorTools({}, Path(tempfile.gettempdir()), lambda *a, **k: None)
+        state = {
+            "grafana_receipts": {},
+            "candidates": [{
+                "id": "b" * 12,
+                "audio_sha256": "c" * 64,
+                "engineering_pass": True,
+                "strategy": {"key": "one"},
+            }],
+            "turn_renders": 1,
+            "deterministic_baseline": {"id": "d" * 12},
+            "candidate_measurements": {"b" * 12: {"timing_status": "measured"}},
+        }
+        context = SimpleNamespace(
+            state=state,
+            actions=SimpleNamespace(escalate=False, skip_summarization=False),
+        )
+        render = SimpleNamespace(name="render_arrangement")
+        self.assertIn("error", runtime.before_tool(render, {}, context))
+        state["grafana_receipts"]["history:"] = {
+            "status": "ok", "evidence_count": 1, "receipt_id": "history"
+        }
+        self.assertIsNone(runtime.before_tool(render, {}, context))
+        self.assertIn(
+            "error",
+            runtime.finish("b" * 12, "needs_human_review", "Compared", [], context),
+        )
+        state["grafana_receipts"]["sound:" + "b" * 12] = {
+            "status": "ok", "evidence_count": 1, "receipt_id": "sound"
+        }
+        result = runtime.finish(
+            "b" * 12, "needs_human_review", "Compared", [], context
+        )
+        self.assertEqual(result["baseline_candidate_id"], "d" * 12)
+        self.assertEqual(result["grafana_evidence"]["sound"], "sound")
+
     def test_failure_categories_do_not_include_exception_text(self):
         from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 

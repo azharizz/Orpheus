@@ -5,6 +5,7 @@ import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
 import "../styles/families.css";
+import "../styles/workspace.css";
 import { PhotographicTitle } from "./photographic-title.jsx";
 
 export function Disclosure({ title, children }) {

@@ -76,10 +76,23 @@ def setup():
                 "/api/serviceaccounts",
                 json={"name": "orpheus-mcp-reader", "role": "Viewer"},
             )
-            response.raise_for_status()
-            ident = response.json()["id"]
+            if response.status_code == 400:
+                existing = client.get(
+                    "/api/serviceaccounts/search",
+                    params={"query": "orpheus-mcp-reader"},
+                )
+                existing.raise_for_status()
+                ident = next(
+                    row["id"]
+                    for row in existing.json().get("serviceAccounts", [])
+                    if row.get("name") == "orpheus-mcp-reader"
+                )
+            else:
+                response.raise_for_status()
+                ident = response.json()["id"]
             response = client.post(
-                f"/api/serviceaccounts/{ident}/tokens", json={"name": "local-runtime"}
+                f"/api/serviceaccounts/{ident}/tokens",
+                json={"name": "local-runtime-" + secrets.token_hex(4)},
             )
             response.raise_for_status()
             values["GRAFANA_MCP_TOKEN"] = response.json()["key"]

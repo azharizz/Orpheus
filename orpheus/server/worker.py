@@ -25,7 +25,7 @@ from ..config import (
     PACKAGE_DIR,
     TURN_TIMEOUT_SECONDS,
 )
-from ..domain import family_agent
+from ..domain import families, family_agent
 from ..domain.projects import atomic, digest as file_digest, frames, load, project_dir
 from ..ops import observability as obs
 
@@ -252,6 +252,20 @@ async def run_turn(pid, family_id, feedback):
         for name, expected_digest in doc["prepared_hashes"].items():
             if file_digest(folder / name) != expected_digest:
                 raise ValueError("Prepared input changed")
+        if not obs.config():
+            raise RuntimeError("Grafana MCP is required for agent coordination")
+        phase = "deterministic_baseline"
+        baseline = families.render(pid, family_id)
+        turn["deterministic_baseline"] = {
+            key: baseline[key]
+            for key in ("id", "audio_sha256", "render_mode", "metrics", "mix")
+        }
+        log(
+            "deterministic_baseline",
+            candidate_id=baseline["id"],
+            metrics=baseline["metrics"],
+            measurements={"accepted_events": len(case["accepted_ranges"])},
+        )
         phase = "session"
         session_id = pid + "-" + family_id
         session = await service.get_session(
@@ -320,6 +334,8 @@ async def run_turn(pid, family_id, feedback):
                         "inspected": False,
                         "selection": None,
                         "grafana_receipts": {},
+                        "candidate_measurements": {},
+                        "deterministic_baseline": turn["deterministic_baseline"],
                     }
                 ),
             ),
@@ -366,7 +382,9 @@ async def run_turn(pid, family_id, feedback):
                             feedback
                             + " Work only inside the confirmed sound-family ranges: "
                             + json.dumps(case["accepted_ranges"])
-                            + ". Do not add, move, or extend sound outside them."
+                            + ". The deterministic family baseline is "
+                            + json.dumps(turn["deterministic_baseline"])
+                            + ". Use it as the measured starting point. Query Grafana history before rendering, measure every agent candidate, then query Grafana sound evidence for that exact candidate before selection. Do not add, move, or extend sound outside confirmed ranges."
                         ),
                         context=case["context"],
                         style=case["style"],
@@ -410,7 +428,11 @@ async def run_turn(pid, family_id, feedback):
         layers = list(turn["candidates"])
         if turn["selection"] and turn["selection"]["candidate_id"]:
             rendered = family_agent.render_selection(
-                pid, family_id, turn["selection"]["candidate_id"]
+                pid,
+                family_id,
+                turn["selection"]["candidate_id"],
+                baseline=turn["deterministic_baseline"],
+                grafana_evidence=turn["selection"].get("grafana_evidence", {}),
             )
             turn["agent_layers"] = layers
             turn["candidates"] = [rendered]

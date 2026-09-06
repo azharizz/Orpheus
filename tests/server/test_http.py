@@ -162,6 +162,14 @@ class HttpChecks(unittest.TestCase):
                 "/api/run",
                 json={"project_id": pid, "family_id": family_id, "consent": True},
             )
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertIn("Grafana MCP", response.json()["error"])
+            start.assert_not_called()
+            with patch.object(web.obs, "config", return_value={"mcp_url": "local"}):
+                response = self.client.post(
+                    "/api/run",
+                    json={"project_id": pid, "family_id": family_id, "consent": True},
+                )
             self.assertEqual(response.status_code, 202, response.text)
             start.assert_called_once_with(pid, family_id, web.DEFAULT_FEEDBACK)
 

@@ -228,7 +228,11 @@ dt,
   text-transform: uppercase;
   letter-spacing: .04em;
   text-decoration: none;
+  padding: 0;
+  border: 0;
+  background: none;
 }
+.motion-control:hover { background: none; border-color: transparent; }
 .motion-disc {
   display: grid;
   place-items: center;

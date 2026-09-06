@@ -371,6 +371,11 @@ class Handler(LocalHandler):
                 )
             if data.get("consent") is not True:
                 raise RequestError("Confirm the paid fitting run before starting it.", 409)
+            if not obs.config():
+                raise RequestError(
+                    "Start the local Grafana stack before agent fitting. The agent requires Grafana MCP evidence.",
+                    409,
+                )
             try:
                 family_agent.load_case(data["project_id"], family_id)
             except (ValueError, FileNotFoundError) as exc:

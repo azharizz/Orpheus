@@ -30,6 +30,12 @@ export const pendingMatches = (family) =>
   );
 export const matchRange = (match) =>
   match.range_s || match.target_range_s || [match.start_s, match.end_s];
+export function pageWindow(items, page, size = 5) {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const current = Math.min(Math.max(0, page), pages - 1);
+  const start = current * size;
+  return { items: items.slice(start, start + size), page: current, pages, start };
+}
 export const time = (n) =>
   `${Math.floor((Number(n) || 0) / 60)
     .toString()

@@ -8,6 +8,12 @@ from .workflow_common import perception_gate
 
 
 class RenderingTools:
+    def record_measurement(self, candidate_id, result, tool_context):
+        measurements = dict(tool_context.state.get("candidate_measurements", {}))
+        measurements[candidate_id] = result
+        tool_context.state["candidate_measurements"] = measurements
+        return result
+
     def save_event_plan(self, events_json: str, tool_context: ToolContext) -> dict:
         """Save the COMPLETE signal-fallback discrete plan before render_plan; not the mixed-arrangement path. events_json is 1..100 objects with exactly time_s,duration_s,sample_id,gain_db,confidence,evidence. Use usable INTEGER source_bank IDs, duration 0.12..3s, gain -8..6, confidence likely/uncertain, evidence 1..400 chars. Sort target times >=0.05s apart. Every event needs review_moments within 0.2s this turn plus a delivered qualifying verdict. Returns saved plan or error."""
         import json
@@ -241,13 +247,13 @@ class RenderingTools:
         if c is None:
             return {"error": "Unknown candidate"}
         if c.get("render_mode") == "texture":
-            return {
+            return self.record_measurement(candidate_id, {
                 "candidate_id": candidate_id,
                 "metrics": c["metrics"],
                 "event_metrics": c.get("event_metrics", []),
                 "timing_status": "not_applicable_for_start_anchored_texture",
                 "warning": "Decoded signal checks are not semantic or listening approval.",
-            }
+            }, tool_context)
         if c.get("render_mode") == "arrangement":
             rows = [
                 r
@@ -293,13 +299,13 @@ class RenderingTools:
 
             atomic(self.folder / (candidate_id + "-measurement.json"), result)
             self.log("candidate_timing_measured", **result)
-            return result
+            return self.record_measurement(candidate_id, result, tool_context)
         result = media.encoded_timing(
             self.folder / (candidate_id + ".mp4"),
             [{"scheduled_peak_s": e["time_s"]} for e in c["plan"]],
         )
         self.log("candidate_timing_measured", candidate_id=candidate_id, **result)
-        return result
+        return self.record_measurement(candidate_id, result, tool_context)
 
     def finish(
         self,
@@ -332,15 +338,21 @@ class RenderingTools:
             }
         if decision not in ("needs_human_review", "unsuitable"):
             return {"error": "Invalid decision"}
+        history = s.get("grafana_receipts", {}).get("history:", {})
+        sound = s.get("grafana_receipts", {}).get("sound:" + candidate_id, {})
         if decision != "unsuitable":
-            if obs.config() and "sound:" + candidate_id not in s.get(
-                "grafana_receipts", {}
-            ):
+            if history.get("status") != "ok" or not history.get("evidence_count"):
                 return {
-                    "error": "Query Grafana sound evidence for this candidate after measuring it before final comparison. Report an unavailable query honestly."
+                    "error": "Query nonempty Grafana history evidence before final comparison."
                 }
-            if len({c["audio_sha256"] for c in cs}) < 2:
-                return {"error": "Compare two different waveforms first"}
+            if sound.get("status") != "ok" or not sound.get("evidence_count"):
+                return {
+                    "error": "Query nonempty Grafana sound evidence for this candidate after measuring it before final comparison."
+                }
+            if candidate_id not in s.get("candidate_measurements", {}):
+                return {"error": "Measure the selected candidate before final comparison"}
+            if not s.get("deterministic_baseline", {}).get("id"):
+                return {"error": "Deterministic family baseline is missing"}
             if not s.get("turn_renders"):
                 return {"error": "Render at least one candidate addressing this turn"}
         if candidate_id and candidate_id not in [c["id"] for c in cs]:
@@ -362,6 +374,11 @@ class RenderingTools:
             "unresolved": unresolved[:15],
             "engineering_pass": selected["engineering_pass"] if selected else False,
             "distinct_strategy_count": strategy_count,
+            "baseline_candidate_id": s.get("deterministic_baseline", {}).get("id"),
+            "grafana_evidence": {
+                "history": history.get("receipt_id"),
+                "sound": sound.get("receipt_id"),
+            },
         }
         tool_context.actions.escalate = True
         tool_context.actions.skip_summarization = True

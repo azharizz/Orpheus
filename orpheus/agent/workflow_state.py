@@ -551,6 +551,16 @@ class StateTools:
             self.pending_receipts.clear()
 
     def before_tool(self, tool, args, tool_context):
+        if tool.name in (
+            "render_arrangement",
+            "render_plan",
+            "render_texture",
+        ):
+            receipt = tool_context.state.get("grafana_receipts", {}).get("history:", {})
+            if receipt.get("status") != "ok" or not receipt.get("evidence_count"):
+                return {
+                    "error": "Query nonempty project history through Grafana MCP before rendering. The deterministic baseline is already exported as evidence."
+                }
         if tool_context.state.get(
             "controller_calls", 0
         ) >= INSPECTION_STOP_CALL and tool.name in (

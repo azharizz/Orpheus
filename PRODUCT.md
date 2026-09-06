@@ -21,7 +21,7 @@ Orpheus reduces search and placement work while retaining human judgment over me
 - Multiple independent sound families per project.
 - One replacement take per family at a time; old takes remain immutable.
 - Compact local matching with no paid calls.
-- Optional bounded provider-backed fitting with explicit consent and provider failover.
+- Agent-coordinated family fitting with explicit paid consent and provider failover.
 - Grafana evidence, exact candidate review, and local export.
 
 Cloud accounts, collaboration, cross-project learning, reusable sound libraries, neural source separation, surround mastering, and silent automatic edits are outside this release.
@@ -33,7 +33,7 @@ Cloud accounts, collaboration, cross-project learning, reusable sound libraries,
 3. **Mark example.** The creator sets a start and end range on the timeline. Orpheus refines a local anchor, but the range remains human-confirmed.
 4. **Review matches.** Rank candidates by similarity to accepted examples and away from rejected examples. Collapse overlapping windows. Save accept/reject decisions atomically, then rescore.
 5. **Perform replacement.** Record with the browser microphone or upload audio. Save provenance, duration, clock uncertainty, hash, and measured profile against the selected family.
-6. **Fit and render.** The local path aligns the take’s strongest contact to each refined anchor. The optional agent path may change crop, timing, and gain but may emit samples only inside accepted ranges.
+6. **Fit and render.** Render a deterministic family baseline, then let the agent improve crop, timing, and gain inside accepted ranges. Grafana MCP history is required before rendering and exact-candidate evidence is required before selection.
 7. **Audition and decide.** Compare original and rendered audio against the same picture. Persist approval or rejection against the exact audio hash. Revisions require a new candidate and review.
 
 No import, match, or review action starts paid inference. No similarity result edits audio without an accepted decision.
@@ -72,7 +72,7 @@ Similarity scores are cosine-ranking evidence, never probabilities. Agent observ
 - Use atomic JSON receipt writes. Failed preparation retains a diagnostic receipt but never appears runnable.
 - Run one indexing or fitting job at a time. Preserve completed artifacts on interruption.
 - Keep credentials, media, free text, prompts, and raw provider responses out of telemetry.
-- Grafana MCP access remains read-only and scoped; telemetry outage cannot erase editing work.
+- Grafana MCP access remains read-only and scoped. An evidence outage stops agent fitting without erasing editing work.
 
 ## Release gates
 

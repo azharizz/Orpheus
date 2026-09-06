@@ -6,6 +6,7 @@ export function Evidence({ p, c, state }) {
   const [receipt, setReceipt] = useState(null);
   const telemetry = state.observability;
   const metrics = Object.entries(c?.metrics || {}).filter(([, value]) => typeof value === "number");
+  const fitting = c?.agent_fitting;
   async function query() {
     const result = await action(
       () => post("/api/grafana", {
@@ -44,13 +45,32 @@ export function Evidence({ p, c, state }) {
         ) : <p>No rendered candidate yet.</p>}
       </section>
       <section>
+        <h2>Agent decision evidence</h2>
+        {fitting?.grafana_evidence?.history && fitting?.grafana_evidence?.sound ? (
+          <>
+            <p>
+              The agent compared this proposal with deterministic baseline{" "}
+              <strong>{fitting.deterministic_baseline?.id}</strong>.
+            </p>
+            <dl>
+              <dt>Grafana history receipt</dt>
+              <dd>{fitting.grafana_evidence.history}</dd>
+              <dt>Grafana candidate receipt</dt>
+              <dd>{fitting.grafana_evidence.sound}</dd>
+            </dl>
+          </>
+        ) : (
+          <p>No agent-coordinated evidence receipt for this preview.</p>
+        )}
+      </section>
+      <section>
         <h2>Grafana evidence</h2>
         <p>
           {telemetry?.error ? "Unavailable" : !telemetry ? "Checking configuration…" :
             telemetry.enabled ? `${telemetry.pending_exports} pending exports · Query to check freshness` : "Not configured"}
         </p>
         {telemetry?.dashboard_url && (
-          <a href={telemetry.dashboard_url + "?var-project=" + p.id} target="_blank" rel="noreferrer">
+          <a className="button-link" href={telemetry.dashboard_url + "?var-project=" + p.id} target="_blank" rel="noreferrer">
             Open Grafana
           </a>
         )}
@@ -64,7 +84,7 @@ export function Evidence({ p, c, state }) {
             <option value="runtime">Runtime</option>
           </select>
         </label>
-        <button disabled={state.busy} onClick={query}>Query official Grafana MCP</button>
+        <button className="primary" disabled={state.busy} onClick={query}>Query official Grafana MCP</button>
         {receipt && (
           <details open>
             <summary>Query receipt · {receipt.status || "Inspect result"}</summary>

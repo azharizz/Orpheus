@@ -126,7 +126,16 @@ def _write_mix(original_path, layer_path, output_path, ranges, duck_db, ramp_s):
     return round(20 * math.log10(max(scale, 1e-9)), 3)
 
 
-def render_selection(pid, family_id, candidate_id, *, duck_db=-12, ramp_s=0.025):
+def render_selection(
+    pid,
+    family_id,
+    candidate_id,
+    *,
+    duck_db=-12,
+    ramp_s=0.025,
+    baseline=None,
+    grafana_evidence=None,
+):
     """Validate a fitted layer, then mix it only across accepted family windows."""
     case = load_case(pid, family_id)
     if not isinstance(candidate_id, str) or not re.fullmatch("[a-f0-9]{12}", candidate_id):
@@ -197,6 +206,8 @@ def render_selection(pid, family_id, candidate_id, *, duck_db=-12, ramp_s=0.025)
             "render_mode": candidate.get("render_mode"),
             "arrangement": candidate.get("arrangement"),
             "plan": candidate.get("plan", []),
+            "deterministic_baseline": baseline,
+            "grafana_evidence": grafana_evidence or {},
         },
         "mix": {
             "duck_db": float(duck_db),

@@ -9,11 +9,18 @@ import {
   seedRange,
   pendingMatches,
   matchRange,
+  pageWindow,
 } from "../state/domain.js";
 test("reject invalid recording boundaries and oversized media", () => {
   for (const n of ["", -1, 30, NaN, Infinity]) assert.throws(() => cue(n, 30));
   assert.equal(cue("29.9", 30), 29.9);
   assert.throws(() => validateFile({ size: 101 }, 100));
+});
+test("match pages stay bounded as the review queue changes", () => {
+  const matches = Array.from({ length: 12 }, (_, id) => id + 1);
+  assert.deepEqual(pageWindow(matches, 1).items, [6, 7, 8, 9, 10]);
+  assert.deepEqual(pageWindow(matches, 99).items, [11, 12]);
+  assert.equal(pageWindow([], 3).page, 0);
 });
 test("labels stored status codes for people while preserving unknown wording", () => {
   assert.equal(label("review_required"), "Review required");

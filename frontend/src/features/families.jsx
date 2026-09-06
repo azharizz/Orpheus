@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { action, loadFamilies, post, update } from "../state/store.js";
-import { matchRange, pendingMatches, seedRange, time, label } from "../state/domain.js";
+import { matchRange, pageWindow, pendingMatches, seedRange, time, label } from "../state/domain.js";
 import { Recorder } from "./takes.jsx";
 import { Review } from "./review.jsx";
 
@@ -121,6 +121,10 @@ function NewFamily({ project, position, disabled, onCreated }) {
 function MatchReview({ project, family, disabled, onPreview }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
+  const [page, setPage] = useState(0);
+  const pageSize = 5;
+  const window = pageWindow(matches, page, pageSize);
+  const { items: visibleMatches, page: currentPage, pages: pageCount, start: pageStart } = window;
   const decided = Object.keys(decisions).length;
   async function save() {
     const result = await action(
@@ -137,6 +141,7 @@ function MatchReview({ project, family, disabled, onPreview }) {
     );
     if (result) {
       setDecisions({});
+      setPage(0);
       await loadFamilies(project.id);
     }
   }
@@ -155,21 +160,22 @@ function MatchReview({ project, family, disabled, onPreview }) {
       {matches.length ? (
         <>
           <ol className="match-list">
-            {matches.map((match, index) => {
+            {visibleMatches.map((match, index) => {
               const range = matchRange(match);
               const choice = decisions[match.id];
+              const matchNumber = pageStart + index + 1;
               return (
                 <li key={match.id}>
                   <button
                     className="match-cue"
                     type="button"
                     disabled={disabled}
-                    aria-label={`Play match ${index + 1} from ${time(range[0])} to ${time(range[1])}`}
+                    aria-label={`Play match ${matchNumber} from ${time(range[0])} to ${time(range[1])}`}
                     onClick={() => onPreview(range)}
                   >
                     <span className="match-play" aria-hidden="true">▶</span>
                     <span>
-                      Match {String(index + 1).padStart(2, "0")}
+                      Match {String(matchNumber).padStart(2, "0")}
                       <small>{time(range[0])} – {time(range[1])}</small>
                     </span>
                     <span className="match-rank">
@@ -179,9 +185,12 @@ function MatchReview({ project, family, disabled, onPreview }) {
                     </span>
                   </button>
                   {match.evidence_summary && (
-                    <p className="match-evidence">{match.evidence_summary}</p>
+                    <details className="match-evidence">
+                      <summary>Ranking evidence</summary>
+                      <p>{match.evidence_summary}</p>
+                    </details>
                   )}
-                  <div className="match-actions" aria-label={`Decision for match ${index + 1}`}>
+                  <div className="match-actions" aria-label={`Decision for match ${matchNumber}`}>
                     <button
                       type="button"
                       aria-pressed={choice === "accepted"}
@@ -203,9 +212,32 @@ function MatchReview({ project, family, disabled, onPreview }) {
               );
             })}
           </ol>
-          <button className="primary" disabled={disabled || !decided} onClick={save}>
-            Save {decided || ""} reviewed {decided === 1 ? "match" : "matches"}
-          </button>
+          <div className="match-footer">
+            {pageCount > 1 && (
+              <nav className="match-pagination" aria-label="Match review pages">
+                <button
+                  type="button"
+                  disabled={disabled || currentPage === 0}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  Previous
+                </button>
+                <span>
+                  {pageStart + 1}–{Math.min(pageStart + pageSize, matches.length)} of {matches.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={disabled || currentPage === pageCount - 1}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+            <button className="primary" disabled={disabled || !decided} onClick={save}>
+              Save {decided || ""} reviewed {decided === 1 ? "match" : "matches"}
+            </button>
+          </div>
         </>
       ) : (
         <p className="empty-line">
@@ -240,10 +272,16 @@ function AgentFit({ project, family, disabled, state }) {
   }
   return (
     <form className="agent-fit" onSubmit={run}>
-      <h3>Fit with the editing agent</h3>
+      <h3>Agent-coordinated family fit</h3>
       <p className="muted">
-        Optional. The agent may adjust timing, crop, and gain inside kept moments.
-        It cannot place sound elsewhere.
+        Orpheus renders a deterministic baseline, asks the agent to improve timing,
+        crop, and gain, then requires Grafana MCP evidence before proposing a result.
+        Every edit stays inside kept moments.
+      </p>
+      <p className={state.observability?.enabled ? "agent-ready" : "error"} role="status">
+        {state.observability?.enabled
+          ? "Grafana MCP ready · deterministic family evidence will support this run"
+          : "Grafana MCP is required. Start the local observability stack first."}
       </p>
       <label>
         Direction for this pass
@@ -264,7 +302,12 @@ function AgentFit({ project, family, disabled, state }) {
         />
         Run paid inference, capped at {state.config?.max_controller_calls || 40} controller calls
       </label>
-      <button disabled={disabled || !consent}>Run fitted alternative</button>
+      <button
+        className="primary"
+        disabled={disabled || !consent || !state.observability?.enabled}
+      >
+        Run agent-coordinated fit
+      </button>
     </form>
   );
 }
@@ -289,20 +332,6 @@ export function FamilyWorkbench({
   function created(id) {
     setChosen(id || "");
     setAdding(false);
-  }
-  async function render() {
-    const result = await action(
-      () =>
-        post("/api/families/render", {
-          project_id: project.id,
-          family_id: family.id,
-        }),
-      "Replacement preview rendered. Listen before approving it.",
-    );
-    if (result) {
-      await loadFamilies(project.id);
-      onCandidate(result.candidate || result);
-    }
   }
   return (
     <div className="family-workbench">
@@ -401,15 +430,8 @@ export function FamilyWorkbench({
                 {family.warnings.map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             )}
-            <button
-              className="primary"
-              disabled={disabled || !family.replacement_take_id}
-              onClick={render}
-            >
-              Render replacement preview
-            </button>
             {!family.replacement_take_id && (
-              <p className="muted">Save a replacement take to enable rendering.</p>
+              <p className="muted">Save a replacement take to enable agent fitting.</p>
             )}
             <AgentFit
               project={project}
