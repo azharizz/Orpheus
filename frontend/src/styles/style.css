@@ -40,6 +40,8 @@
 }
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   background: #090a0b url("../assets/landing-grain.webp") center top / 720px
     auto repeat;
 }
@@ -198,6 +200,14 @@ dt,
   text-transform: capitalize;
 }
 .landing-header nav { justify-content: center; gap: 28px; }
+.landing-header .header-status {
+  justify-self: end;
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
 .landing-header nav a {
   color: var(--text-primary);
   text-decoration: none;
@@ -256,6 +266,7 @@ dt,
   .landing-header { grid-template-columns: 1fr auto; gap: 12px; padding: 16px 20px; }
   .landing-header nav { grid-row: 2; grid-column: 1 / -1; margin: 0; justify-content: space-between; gap: 16px; }
   .motion-control { grid-row: 1; grid-column: 2; padding: 0; }
+  .landing-header .header-status { grid-row: 1; grid-column: 2; width: auto; }
   .landing-hero { min-height: calc(100svh - 150px); padding: 40px 0 16px; }
   .landing-statement { margin-top: 56px; }
   .sound-picture-mark { margin-top: 48px; }

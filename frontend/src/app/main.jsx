@@ -190,7 +190,7 @@ function App() {
       <a className="skip" href="#main">
         Skip to workspace
       </a>
-      <header className={!isWorkspace ? "landing-header" : undefined}>
+      <header className="landing-header">
         <a className="wordmark" href="/">
           ORPHEUS
         </a>
@@ -198,7 +198,6 @@ function App() {
           <a href="/?view=projects" aria-current={!isWorkspace && library ? "page" : undefined}>
             Projects
           </a>
-          {!isWorkspace && <a href="/#about">About</a>}
           <a href="/workspace" aria-current={isWorkspace ? "page" : undefined}>
             New project
           </a>
