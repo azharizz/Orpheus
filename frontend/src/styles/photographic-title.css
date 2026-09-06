@@ -14,6 +14,10 @@
   animation: scene-cycle 9s steps(1, end) infinite;
   animation-delay: var(--scene-delay);
 }
+.title-gate {
+  transform: translate(var(--gate-x, 0px), var(--gate-y, 0px));
+  transition: transform 420ms cubic-bezier(.16, 1, .3, 1);
+}
 .title-photograph {
   opacity: .88;
   filter: brightness(1.4);
@@ -21,7 +25,11 @@
   animation-delay: var(--scene-delay);
 }
 .title-interference { animation: signal-change 3s linear infinite; opacity: 0; }
-.title-noise { animation: signal-grain 240ms steps(1, end) infinite; }
+.title-noise {
+  animation: signal-grain 240ms steps(1, end) infinite;
+  filter: grayscale(1) contrast(1.8);
+  opacity: .78;
+}
 .photographic-title[data-paused="true"] * { animation-play-state: paused; }
 @keyframes scene-cycle {
   0%, 33.332% { opacity: 1; }
@@ -43,6 +51,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .photographic-title * { animation: none; }
+  .title-gate { transform: none; transition: none; }
   .title-scene:first-child { opacity: 1; }
   .title-interference { display: none; }
 }
