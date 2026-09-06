@@ -51,9 +51,10 @@ Local Orpheus validation created project `37f76d82b1bb47c0` under `/tmp/orpheus-
 - all 277 acoustic windows indexed;
 - nine waveform-aligned footstep events retained;
 - 24 proposals remained pending after rescoring;
-- replacement render `d05d32026848` preserved the picture;
+- [Walking through grass](https://pixabay.com/sound-effects/film-special-effects-walking-through-grass-80308/), a 12.33-second CC0 mono recording by vgraham1, replaced the earlier gravel take;
+- replacement render `65f136f43ea0` preserved the picture and measured -26.2 LUFS / -0.5 dBTP;
 - PCM outside accepted ranges remained byte-for-byte unchanged;
-- 538,560 samples changed inside accepted ranges;
+- 269,472 frames changed inside accepted ranges;
 - zero samples clipped;
 - browser QA exposed the original/replacement waveforms, family queue, take, render, evidence, and exports;
 - bounded preview stopped on the first native `timeupdate` after the requested end, approximately 93 ms late in the observed run.
