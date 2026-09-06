@@ -4,7 +4,7 @@ import { useStore, action, api, update } from "../state/store.js";
 import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
-import { Shutters } from "./shutters.jsx";
+import { PhotographicTitle } from "./photographic-title.jsx";
 
 export function Disclosure({ title, children }) {
   return (
@@ -41,7 +41,7 @@ function Import({ config, busy }) {
         </p>
         <p>
           Already have a project? Open it from{" "}
-          <a href="/">your project library</a>.
+          <a href="/?view=projects">your project library</a>.
         </p>
       </div>
       <form onSubmit={submit}>
@@ -104,41 +104,27 @@ function Import({ config, busy }) {
     </section>
   );
 }
-function Landing({ projects, loading }) {
+function Landing({ projects, loading, paused, library }) {
   return (
-    <main id="main" className="entrance">
-      <section className="landing-hero">
-        <div className="hero-meta">
-          <span>PICTURE / SOUND / EVIDENCE</span>
-          <span>LOCAL FOLEY WORKBENCH</span>
-        </div>
-        <Shutters />
-        <div className="entrance-title">
-          <div className="hero-lockup">
-            <p className="hero-mark">
-              A PERFORMANCE
-              <br />
-              THAT BELONGS.
-            </p>
+    <main id="main" className={library ? "entrance project-library" : "entrance"}>
+      {library ? <ProjectLibrary projects={projects} loading={loading} /> : (
+        <section className="landing-hero">
+          <PhotographicTitle paused={paused} />
+          <div className="landing-statement" id="about">
+            <p>Every movement has a voice. Bring your picture, shape its sound, and give each moment a presence of its own.</p>
+            <svg className="sound-picture-mark" viewBox="0 0 180 66" fill="none" aria-hidden="true">
+              <path d="M20 33h22m8-8v16m8-24v32m8-36v40m8-32v24m8-17v10m8-5h23" />
+              <path d="M130 15h-10v36h10m20-36h10v36h-10" />
+              <circle cx="140" cy="33" r="4" />
+            </svg>
           </div>
-          <div className="hero-copy">
-            <p>
-              Shape the sound that makes a frame feel real. Bring a scene, find
-              its rhythm, and keep every decision yours.
-            </p>
-            <a className="primary hero-cta" href="/workspace">
-              <span>Start a project</span>
-              <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-        </div>
-        <div className="hero-foot">
-          <span>LOCAL / SINGLE USER</span>
-          <span>
-            SELECT A PHOTOGRAPH TO OPEN
-          </span>
-        </div>
-      </section>
+        </section>
+      )}
+    </main>
+  );
+}
+function ProjectLibrary({ projects, loading }) {
+  return (
       <section aria-labelledby="projects-title">
         <div className="section-heading">
           <div>
@@ -190,15 +176,12 @@ function Landing({ projects, loading }) {
           </div>
         )}
       </section>
-      <footer>
-        <p>Fit to picture. Record another take. Keep what works.</p>
-        <span>Human judgment is the final edit.</span>
-      </footer>
-    </main>
   );
 }
 function App() {
   const state = useStore();
+  const [paused, setPaused] = useState(false);
+  const library = new URLSearchParams(window.location.search).get("view") === "projects";
   const pid = new URLSearchParams(window.location.search).get("project");
   const project = state.projects.find((p) => p.id === pid);
   const isWorkspace = window.location.pathname === "/workspace";
@@ -207,21 +190,27 @@ function App() {
       <a className="skip" href="#main">
         Skip to workspace
       </a>
-      <header>
+      <header className={!isWorkspace ? "landing-header" : undefined}>
         <a className="wordmark" href="/">
           ORPHEUS
         </a>
         <nav aria-label="Main navigation">
-          <a href="/" aria-current={!isWorkspace ? "page" : undefined}>
+          <a href="/?view=projects" aria-current={!isWorkspace && library ? "page" : undefined}>
             Projects
           </a>
+          {!isWorkspace && <a href="/#about">About</a>}
           <a href="/workspace" aria-current={isWorkspace ? "page" : undefined}>
             New project
           </a>
         </nav>
-        <span className="header-status">
-          {state.running ? "Agent running" : "Local workspace"}
-        </span>
+        {isWorkspace ? <span className="header-status">{state.running ? "Agent running" : "Local workspace"}</span> : (
+          <button className="motion-control" aria-label={paused ? "Resume title animation" : "Pause title animation"} aria-pressed={paused} onClick={() => setPaused(!paused)}>
+            <span>Motion</span>
+            <span className="motion-disc" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">{paused ? <path d="m9 6 9 6-9 6V6Z" /> : <path d="M9 6v12M15 6v12" />}</svg>
+            </span>
+          </button>
+        )}
       </header>
       <div className="announcement" role="status" aria-live="polite">
         {state.busy ? "Working…" : state.message}
@@ -238,7 +227,7 @@ function App() {
         </p>
       ))}
       {!isWorkspace ? (
-        <Landing {...state} />
+        <Landing {...state} paused={paused} library={library} />
       ) : (
         <main id="main">
           {pid && state.loading ? (
@@ -250,7 +239,7 @@ function App() {
                 Check the project library or retry when the local server is
                 available.
               </p>
-              <a href="/">Open projects</a>
+              <a href="/?view=projects">Open projects</a>
             </section>
           ) : project ? (
             <Workspace key={project.id} project={project} state={state} />
