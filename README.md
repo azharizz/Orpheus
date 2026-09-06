@@ -12,7 +12,7 @@ python3.11 -m venv .venv
 cp .env.example .env
 npm ci --prefix frontend
 npm run build --prefix frontend
-.venv/bin/python -m orpheus.web
+.venv/bin/python -m orpheus
 ```
 
 Open http://127.0.0.1:8766. Set your OpenRouter key in `.env` before requesting paid fitting. Uploading prepares local media without starting inference. Runtime settings live in `orpheus/config.py`; project media and sessions live under `data/` (or `ORPHEUS_DATA_DIR`). The lab is not a runtime dependency.
@@ -22,17 +22,19 @@ The interface serves two routes: `/` and `/workspace`. Inputs are clipped to the
 ## Check
 
 ```sh
-.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m unittest discover -s tests -t .
 npm test --prefix frontend
 npm run build --prefix frontend
 ```
 
 The default tests use synthetic media and scripted model responses. They establish processing and workflow wiring, not autonomous perceptual quality. The optional real Grafana MCP check requires running services and `ORPHEUS_LIVE_MCP=1`.
 
+The Python package is grouped by responsibility: `orpheus/domain/` owns project and media operations, `orpheus/agent/` owns ADK workflow tools and prompts, `orpheus/server/` owns the loopback API and worker, and `orpheus/ops/` owns telemetry and Grafana helpers. The frontend follows the same boundary in `frontend/src/` with `app/`, `features/`, `media/`, `state/`, `styles/`, `assets/`, and `tests/` folders.
+
 ## Grafana
 
-Provisioning, dashboards and Docker Compose are in `observability/`; the official MCP service is read-only. See `python -m orpheus.grafana --help` for setup and collector commands. Credentials and the evidence outbox belong in runtime storage and must not be committed.
+Provisioning, dashboards and Docker Compose are in `observability/`; the official MCP service is read-only. See `python -m orpheus.ops.grafana --help` for setup and collector commands. Credentials and the evidence outbox belong in runtime storage and must not be committed.
 
 ## Status
 
-Implementation and acceptance remain in progress. Read `docs/STATUS.md` for verified checks and remaining work. GCP deployment is outside this local delivery scope.
+Read `docs/STATUS.md` for verified checks and remaining work. GCP deployment is outside this local delivery scope.

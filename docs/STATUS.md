@@ -13,7 +13,7 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 - Frontend: 13 Node lifecycle/transport/domain checks pass and the Vite production build passes.
 - Browser QA covered landing/workspace at desktop and mobile widths, picture playback, independent-source playback, source/picture exclusivity, candidate switching, evidence rail, review disclosures, and the explicit paid-run consent gate.
 - Impeccable detector returned no findings for `frontend/src` after the bounded visual pass. Self-hosted Barlow Condensed and Source Sans 3 assets are licensed and bundled.
-- No `useEffect`, imperative DOM queries, parent-path imports, or source file over 800 lines in application code.
+- No `useEffect`, imperative DOM queries, reference-lab imports, or source file over 800 lines in application code.
 
 ## Known limits
 
@@ -24,4 +24,4 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 
 ## Layout
 
-`orpheus/` contains the standalone Python workflow and HTTP service. `frontend/` contains the two-route React application. `observability/` contains the isolated Grafana/Loki/Tempo/Prometheus assets. `tests/` uses generated temporary media and never depends on the reference lab at runtime.
+`orpheus/domain/` contains project, media and sound-editing services; `orpheus/agent/` contains the ADK workflow and prompts; `orpheus/server/` contains the loopback API and worker; and `orpheus/ops/` contains telemetry and Grafana helpers. `frontend/src/` is grouped into `app/`, `features/`, `media/`, `state/`, `styles/`, `assets/` and `tests/`. The top-level `observability/` directory contains isolated Grafana/Loki/Tempo/Prometheus assets. `tests/` uses generated temporary media and never depends on the reference lab at runtime.

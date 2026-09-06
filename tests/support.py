@@ -1,17 +1,14 @@
 """Deterministic media generated in temporary storage; no private lab fixtures."""
 
 import atexit
-import os
 import tempfile
 import wave
 from functools import lru_cache
 from pathlib import Path
+
 import numpy as np
 
-os.environ.setdefault("AGENT_PROVIDER_API_KEY", "offline-test-key")
-if os.environ.get("ORPHEUS_LIVE_MCP") != "1":
-    os.environ["ORPHEUS_GRAFANA_ENABLED"] = "0"
-from orpheus.projects import ff
+from orpheus.domain.projects import ff
 
 _storage = tempfile.TemporaryDirectory(prefix="orpheus-tests-")
 atexit.register(_storage.cleanup)
