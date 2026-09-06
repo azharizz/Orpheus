@@ -104,19 +104,43 @@ function Import({ config, busy }) {
     </section>
   );
 }
-function Landing({ projects, loading, paused, library }) {
+const waveShape = [0.42, -0.78, 0.58, -1, 0.7, -0.36, 0.92, -0.5, 0.65, -0.88, 0.35, -0.72];
+const maxWavePoints = 36;
+
+function SoundSyncMark({ wave }) {
+  const path = wave.samples.map((value, index) => {
+    const x = 24 + (index / (maxWavePoints - 1)) * 312;
+    const y = 36 - value;
+    return `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
   return (
-    <main id="main" className={library ? "entrance project-library" : "entrance"}>
+    <svg
+      className="sound-picture-mark"
+      viewBox="0 0 360 72"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path className="sound-idle-line" d="M180 1v70" />
+      {wave.samples.length > 1 && (
+        <g key={wave.tick} className="sound-wave-trace">
+          <path className="sound-wave-path" pathLength="1" d={path} />
+        </g>
+      )}
+    </svg>
+  );
+}
+function Landing({ projects, loading, paused, library, wave }) {
+  return (
+    <main
+      id="main"
+      className={library ? "entrance project-library" : "entrance"}
+    >
       {library ? <ProjectLibrary projects={projects} loading={loading} /> : (
         <section className="landing-hero">
           <PhotographicTitle paused={paused} />
           <div className="landing-statement" id="about">
             <p>Every movement has a voice. Bring your picture, shape its sound, and give each moment a presence of its own.</p>
-            <svg className="sound-picture-mark" viewBox="0 0 180 66" fill="none" aria-hidden="true">
-              <path d="M20 33h22m8-8v16m8-24v32m8-36v40m8-32v24m8-17v10m8-5h23" />
-              <path d="M130 15h-10v36h10m20-36h10v36h-10" />
-              <circle cx="140" cy="33" r="4" />
-            </svg>
+            <SoundSyncMark wave={wave} />
           </div>
         </section>
       )}
@@ -181,12 +205,29 @@ function ProjectLibrary({ projects, loading }) {
 function App() {
   const state = useStore();
   const [paused, setPaused] = useState(false);
+  const [wave, setWave] = useState({ samples: [], tick: 0 });
   const library = new URLSearchParams(window.location.search).get("view") === "projects";
   const pid = new URLSearchParams(window.location.search).get("project");
   const project = state.projects.find((p) => p.id === pid);
   const isWorkspace = window.location.pathname === "/workspace";
+  const trackable = !isWorkspace && !library;
+  function trackPointer(event) {
+    if (!trackable || event.pointerType === "touch") return;
+    const movement = Math.hypot(event.nativeEvent.movementX || 0, event.nativeEvent.movementY || 0);
+    if (!movement) return;
+    setWave((current) => {
+      const tick = current.tick + 1;
+      const speed = Math.min(1, movement / 28);
+      const amplitude = 5 + speed * 28;
+      const shape = waveShape[tick % waveShape.length];
+      return { tick, samples: [...current.samples.slice(-(maxWavePoints - 1)), shape * amplitude] };
+    });
+  }
+  function clearWave() {
+    setWave((current) => current.samples.length ? { samples: [], tick: current.tick + 1 } : current);
+  }
   return (
-    <>
+    <div className="app-shell" onPointerMove={trackPointer} onPointerLeave={clearWave}>
       <a className="skip" href="#main">
         Skip to workspace
       </a>
@@ -226,7 +267,7 @@ function App() {
         </p>
       ))}
       {!isWorkspace ? (
-        <Landing {...state} paused={paused} library={library} />
+        <Landing {...state} paused={paused} library={library} wave={wave} />
       ) : (
         <main id="main">
           {pid && state.loading ? (
@@ -247,7 +288,7 @@ function App() {
           )}
         </main>
       )}
-    </>
+    </div>
   );
 }
 createRoot(document.getElementById("root")).render(<App />);

@@ -255,11 +255,35 @@ dt,
   text-wrap: balance;
 }
 .sound-picture-mark {
-  width: 160px;
-  height: 60px;
+  width: min(420px, 84vw);
+  height: 76px;
   margin-top: clamp(40px, 6vh, 72px);
   stroke: var(--accent);
   stroke-width: 1.3;
+  pointer-events: none;
+}
+.sound-idle-line {
+  opacity: .82;
+  stroke-width: 1.1;
+}
+.sound-wave-trace {
+  opacity: 1;
+  animation: sound-wave-fade 900ms ease-out both;
+}
+.sound-wave-path {
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: sound-wave-write 480ms cubic-bezier(.16, 1, .3, 1) both;
+}
+@keyframes sound-wave-write {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes sound-wave-fade {
+  0%, 25% { opacity: 1; }
+  100% { opacity: 0; }
 }
 .project-library { min-height: calc(100svh - 112px); }
 @media (max-width: 767px) {
@@ -273,6 +297,8 @@ dt,
 }
 @media (prefers-reduced-motion: reduce) {
   .motion-control { visibility: hidden; }
+  .sound-wave-trace { animation: none; opacity: 0; }
+  .sound-wave-path { animation: none; stroke-dashoffset: 0; }
 }
 .section-heading {
   display: flex;
