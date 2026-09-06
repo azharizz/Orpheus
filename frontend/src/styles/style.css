@@ -40,7 +40,7 @@
 }
 body {
   margin: 0;
-  background: #090a0b url("../assets/landing-grain.png") center top / 720px auto repeat;
+  background: #090a0b url("../assets/landing-grain.webp") center top / 720px auto repeat;
 }
 ::selection {
   background: var(--accent);
