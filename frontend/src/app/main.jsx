@@ -4,6 +4,8 @@ import { useStore, action, api, update } from "../state/store.js";
 import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
+import heroStep from "../assets/hero-step.webp";
+import heroReel from "../assets/hero-reel.webp";
 
 export function Disclosure({ title, children }) {
   return (
@@ -108,12 +110,11 @@ function Landing({ projects, loading }) {
     <main id="main" className="entrance">
       <section className="landing-hero">
         <div className="hero-meta">
-          <span>[ 01 ]</span>
+          <span>PICTURE / SOUND / EVIDENCE</span>
           <span>LOCAL FOLEY WORKBENCH</span>
         </div>
         <div className="entrance-title">
           <div className="hero-lockup">
-            <p className="eyebrow">PICTURE / SOUND / EVIDENCE</p>
             <h1>ORPHEUS</h1>
             <p className="hero-mark">
               A PERFORMANCE
@@ -122,8 +123,14 @@ function Landing({ projects, loading }) {
             </p>
           </div>
           <div className="hero-visual" aria-hidden="true">
-            <img src="/src/assets/hero-step.webp" />
-            <img src="/src/assets/hero-reel.webp" />
+            <img
+              src={heroStep}
+              alt=""
+              width="1122"
+              height="1402"
+              fetchPriority="high"
+            />
+            <img src={heroReel} alt="" width="1122" height="1402" />
           </div>
           <div className="hero-copy">
             <p>
@@ -146,7 +153,6 @@ function Landing({ projects, loading }) {
       <section aria-labelledby="projects-title">
         <div className="section-heading">
           <div>
-            <span className="section-index">[ 02 ]</span>
             <h2 id="projects-title">YOUR SCENES</h2>
           </div>
           <span className="muted">
