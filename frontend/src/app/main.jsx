@@ -106,22 +106,49 @@ function Import({ config, busy }) {
 function Landing({ projects, loading }) {
   return (
     <main id="main" className="entrance">
-      <section className="entrance-title">
-        <h1>ORPHEUS</h1>
-        <div>
-          <p>
-            Picture. Sound.
-            <br />A performance that belongs.
-          </p>
-          <a className="primary" href="/workspace">
-            Start a project
-          </a>
+      <section className="landing-hero">
+        <div className="hero-meta">
+          <span>[ 01 ]</span>
+          <span>LOCAL FOLEY WORKBENCH</span>
+        </div>
+        <div className="entrance-title">
+          <div className="hero-lockup">
+            <p className="eyebrow">PICTURE / SOUND / EVIDENCE</p>
+            <h1>ORPHEUS</h1>
+            <p className="hero-mark">
+              A PERFORMANCE
+              <br />
+              THAT BELONGS.
+            </p>
+          </div>
+          <div className="hero-copy">
+            <p>
+              Shape the sound that makes a frame feel real. Bring a scene, find
+              its rhythm, and keep every decision yours.
+            </p>
+            <a className="primary hero-cta" href="/workspace">
+              <span>Start a project</span>
+              <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+        <div className="hero-foot">
+          <span>LOCAL / SINGLE USER</span>
+          <span>
+            SCROLL TO ENTER <b aria-hidden="true">↓</b>
+          </span>
         </div>
       </section>
       <section aria-labelledby="projects-title">
         <div className="section-heading">
-          <h2 id="projects-title">Your scenes</h2>
-          <span className="muted">Saved on this computer</span>
+          <div>
+            <span className="section-index">[ 02 ]</span>
+            <h2 id="projects-title">YOUR SCENES</h2>
+          </div>
+          <span className="muted">
+            Saved on this computer ·{" "}
+            {projects.length.toString().padStart(2, "0")} files
+          </span>
         </div>
         {loading ? (
           <p className="loading">Loading your project library…</p>
