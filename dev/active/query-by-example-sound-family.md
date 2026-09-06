@@ -19,8 +19,9 @@ The release method is the compact NumPy/FFmpeg fingerprint. The CLAP prototype w
 - Per-match rows are playable from their own range and stop at the range end.
 - Workspace supports seed confirmation, batch accept/reject, re-ranking, take assignment/audition, selective render, A/B switching, and approval.
 - Real-media browser QA passed with a CC0 picture plus independently sourced gravel recordings: 114 windows indexed, six accepted events, one rejected event, unchanged PCM outside accepted windows, preserved picture, zero clipping, and approval receipt.
-- The latest single-walker fixture used a Pixabay picture whose embedded audio was silent; a local gravel recording was muxed for functional testing. It is explicitly composite test data, not synchronized production sound.
-- Five replacement candidate links were supplied for user selection; none has been downloaded or imported yet.
+- The selected successor fixture is the 28.212-second YouTube video `6VyMrePXqfs`. Its embedded AAC soundtrack is audible and contains repeated footsteps at a dominant cadence near 0.92–0.98 seconds; the continuous picture shows one walker. It was imported without a substituted soundtrack.
+- Local validation indexed all 277 windows, accepted nine waveform-aligned events, rendered a family replacement, preserved picture and out-of-range PCM, and produced zero clipped samples. Browser QA exposed the full family workflow and bounded match preview; playback stopped about 93 ms after the requested boundary on the next native `timeupdate` event.
+- YouTube reports no Creative Commons license metadata and the description states no reuse grant. Keep the downloaded file and derived QA project local and unbundled unless the uploader grants permission.
 
 ## Paid inference state
 
@@ -36,11 +37,10 @@ One capped paid parity run was authorized and attempted on project `aed508f11aff
 
 ## Open work / blockers
 
-1. Select a walking video with genuinely audible, isolated footsteps. The five YouTube links are candidate previews; stream metadata shows AAC, but waveform audibility and reuse rights still need direct verification.
-2. Do not claim a real-media parity success using the silent Pixabay soundtrack. If a selected source is YouTube, verify its actual license before importing; uploader “copyright free” wording is not proof.
-3. Improve paid fitting before another paid run: reduce repeated frames/tool receipts/schema context, expose provider readiness and sanitized failure categories, and preserve valid drafts as clearly labelled drafts without carrying approval.
-4. Consider limiting the initial pending-match queue and revealing more on demand; 46 rows for 28 seconds was operationally noisy.
-5. Run the final full test matrix and a new paid parity run only after a non-silent fixture is selected and provider readiness is visible.
+1. Obtain an explicit reuse grant before distributing or bundling the selected YouTube fixture. Its technical suitability is verified; its reuse license is not.
+2. Improve paid fitting before another paid run: reduce repeated frames/tool receipts/schema context, expose provider readiness and sanitized failure categories, and preserve valid drafts as clearly labelled drafts without carrying approval.
+3. Consider limiting the initial pending-match queue and revealing more on demand; the successor fixture still presents 24 pending matches after nine events are kept.
+4. Run the final full test matrix and a new paid parity run only after provider readiness is visible. The media itself is no longer the technical blocker.
 
 ## Resume commands
 
@@ -64,5 +64,5 @@ Read `docs/STATUS.md`, `docs/REAL_MEDIA_UI_TEST.md`, and `docs/PAID_SINGLE_WALKE
 
 ## Decision options for the next agent
 
-- **Option A (recommended):** wait for the user to choose one of the five candidate videos, then verify audible waveform + license, import it, run UI parity, and update the real-media report.
-- **Option B:** create a local picture-plus-footsteps fixture from a clearly licensed source and continue UI/render validation without waiting for external-video rights; this proves the workflow but does not prove camera-synchronized production sound.
+- **Option A (recommended for private QA):** harden provider readiness/context handling, then use the validated local YouTube fixture for the next capped run without distributing it.
+- **Option B (required for a distributable fixture):** obtain the uploader's reuse permission or replace it with equivalently suitable media carrying a verifiable license.

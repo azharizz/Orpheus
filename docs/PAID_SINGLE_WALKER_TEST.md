@@ -1,5 +1,7 @@
 # Paid single-walker UI test
 
+The paid run below is a historical record of the original silent-picture fixture. It has not been rewritten as a success.
+
 Run: 2026-09-07, project `aed508f11aff4024`, family `e93113e582fd`.
 
 ## Fixture
@@ -37,3 +39,23 @@ Orpheus withheld approval and the final family render. It retained one intermedi
 3. Preserve and expose valid intermediate candidates after a late provider failure as clearly labelled drafts; keep approval disabled.
 4. Show provider readiness before consent and surface the sanitized failure category in the workspace.
 5. Limit the initial review queue and reveal more matches on demand. Forty-six rows for 28 seconds is operationally noisy even with per-row auditioning.
+
+## Selected successor fixture
+
+The user selected [man walking alone at morning with sound](https://www.youtube.com/watch?v=6VyMrePXqfs) for subsequent validation. It is a 28.212-second, 1920×1080 continuous shot of one walker with embedded stereo AAC audio. Unlike the original Pixabay fixture, its soundtrack was used directly.
+
+Waveform inspection measured -44.0 dB mean volume and -17.8 dB peak. Repeated transients occur predominantly every 0.92–0.98 seconds, providing enough events for family matching. YouTube exposes no Creative Commons license metadata, and the uploader description provides no reuse grant. The download and derived project therefore remain ignored local QA data and must not be bundled or represented as reusable media.
+
+Local Orpheus validation created project `37f76d82b1bb47c0` under `/tmp/orpheus-youtube-walker.vbcwIV`:
+
+- all 277 acoustic windows indexed;
+- nine waveform-aligned footstep events retained;
+- 24 proposals remained pending after rescoring;
+- replacement render `d05d32026848` preserved the picture;
+- PCM outside accepted ranges remained byte-for-byte unchanged;
+- 538,560 samples changed inside accepted ranges;
+- zero samples clipped;
+- browser QA exposed the original/replacement waveforms, family queue, take, render, evidence, and exports;
+- bounded preview stopped on the first native `timeupdate` after the requested end, approximately 93 ms late in the observed run.
+
+No paid inference was triggered during successor-fixture validation.

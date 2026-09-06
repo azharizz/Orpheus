@@ -1,6 +1,6 @@
 # Orpheus delivery status
 
-Updated 2026-09-06. This is a local, single-user production-quality baseline. It is not a perceptual sound-quality certificate.
+Updated 2026-09-07. This is a local, single-user production-quality baseline. It is not a perceptual sound-quality certificate.
 
 ## Verified
 
@@ -16,6 +16,7 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 - Annotated shoe benchmark: 90% recall, 75% precision, 0.865 F2, 0.052 ms median refined-onset error, 61,244-byte index.
 - Real shoe-media parity completed import, 79-window indexing, batch decisions, family take, selective render, picture preservation, zero-clipping measurement, and exact hash-bound review.
 - Browser QA with independently sourced Wikimedia picture, real gravel footsteps, and a separate replacement completed 114-window indexing, mixed batch review, re-ranking, family take audition, selective render, A/B switching, exact approval, picture preservation, and zero clipping. See `docs/REAL_MEDIA_UI_TEST.md`.
+- The selected 28.212-second single-walker successor contains its own audible, repeated footsteps. Local validation completed 277-window indexing, nine accepted events, selective replacement, unchanged out-of-range PCM, picture preservation, zero clipping, and browser inspection. The source has no reported Creative Commons license, so it remains ignored local QA media rather than a bundled fixture. See `docs/PAID_SINGLE_WALKER_TEST.md`.
 - Impeccable detection returned no findings on the finalized frontend; desktop and 390 px mobile browser passes found no horizontal overflow or missing action.
 - No `useEffect`; application source files stay below 800 lines.
 
