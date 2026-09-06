@@ -15,6 +15,7 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 - Frontend suite: 15 tests pass; the Vite production build passes.
 - Annotated shoe benchmark: 90% recall, 75% precision, 0.865 F2, 0.052 ms median refined-onset error, 61,244-byte index.
 - Real shoe-media parity completed import, 79-window indexing, batch decisions, family take, selective render, picture preservation, zero-clipping measurement, and exact hash-bound review.
+- Browser QA with independently sourced Wikimedia picture, real gravel footsteps, and a separate replacement completed 114-window indexing, mixed batch review, re-ranking, family take audition, selective render, A/B switching, exact approval, picture preservation, and zero clipping. See `docs/REAL_MEDIA_UI_TEST.md`.
 - Impeccable detection returned no findings on the finalized frontend; desktop and 390 px mobile browser passes found no horizontal overflow or missing action.
 - No `useEffect`; application source files stay below 800 lines.
 
