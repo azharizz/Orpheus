@@ -40,7 +40,7 @@
 }
 body {
   margin: 0;
-  background: #090a0b;
+  background: #090a0b url("../assets/landing-grain.png") center top / 720px auto repeat;
 }
 ::selection {
   background: var(--accent);
@@ -125,7 +125,7 @@ header {
   align-items: center;
   gap: 32px;
   padding: 18px clamp(20px, 4vw, 64px);
-  border-bottom: 1px solid #252a2e;
+  border-bottom: 0;
   position: relative;
   z-index: 2;
 }
