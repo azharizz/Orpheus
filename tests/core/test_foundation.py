@@ -8,10 +8,10 @@ from orpheus.domain import projects
 
 
 class Foundation(unittest.TestCase):
-    def test_preparation_discloses_source_truncation_and_no_audio(self):
+    def test_preparation_preserves_full_video_and_discloses_no_audio(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)
-            video, sfx = (folder / "target.mp4", folder / "source.wav")
+            video = folder / "target.mp4"
             projects.ff(
                 "-f",
                 "lavfi",
@@ -23,33 +23,13 @@ class Foundation(unittest.TestCase):
                 "libx264",
                 video,
             )
-            projects.ff(
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=300:sample_rate=48000",
-                "-t",
-                31,
-                sfx,
-            )
             with patch.object(projects, "PROJECTS", folder / "projects"):
-                p = projects.create(video, sfx)
-            self.assertEqual(p["preparation"]["sfx_input_duration_s"], 31)
-            self.assertTrue(p["preparation"]["sfx_truncated"])
+                p = projects.create(video)
             self.assertFalse(p["preparation"]["video_truncated"])
             self.assertIn("no_original_audio", p["input_warnings"])
-            self.assertIn("source_truncated", p["input_warnings"])
             self.assertIn("mono_analysis_copy", p["input_warnings"])
-            for name, source in [("video", video), ("sfx", sfx)]:
-                self.assertEqual(
-                    (
-                        folder
-                        / "projects"
-                        / p["id"]
-                        / p["preparation"]["original_files"][name]
-                    ).read_bytes(),
-                    source.read_bytes(),
-                )
+            original = folder / "projects" / p["id"] / p["preparation"]["original_files"]["video"]
+            self.assertEqual(original.read_bytes(), video.read_bytes())
 
     def test_initialization_failure_is_persisted(self):
         import asyncio
@@ -63,12 +43,13 @@ class Foundation(unittest.TestCase):
             projects.atomic(folder / "project.json", doc)
             with (
                 patch.object(worker, "load", return_value=doc),
+                patch.object(worker.family_agent, "load_case", return_value=doc),
                 patch.object(worker, "project_dir", return_value=folder),
                 patch.object(
                     worker, "session_service", side_effect=RuntimeError("secret")
                 ),
             ):
-                result = asyncio.run(worker.run_turn("a" * 16, "test"))
+                result = asyncio.run(worker.run_turn("a" * 16, "b" * 12, "test"))
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["failure"]["phase"], "session_initialization")
             self.assertEqual(
@@ -120,10 +101,11 @@ class Foundation(unittest.TestCase):
             projects.atomic(folder / "project.json", doc)
             with (
                 patch.object(worker, "load", return_value=doc),
+                patch.object(worker.family_agent, "load_case", return_value=doc),
                 patch.object(worker, "project_dir", return_value=folder),
                 patch.object(worker, "session_service", return_value=service),
             ):
-                result = asyncio.run(worker.run_turn("a" * 16, "test"))
+                result = asyncio.run(worker.run_turn("a" * 16, "b" * 12, "test"))
             self.assertEqual(result["failure"]["phase"], "cleanup")
             self.assertEqual(result["status"], "failed")
             self.assertEqual(

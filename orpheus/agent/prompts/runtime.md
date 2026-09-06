@@ -33,5 +33,5 @@ Clipped-video frame timestamp {timestamp} seconds
 User request: {feedback}
 Target context: {context}
 Desired sound: {style}
-Only first {seconds} seconds. Whole original soundtrack will be replaced.
+Project duration: {seconds} seconds. Work only inside the confirmed sound-family ranges supplied with this turn; the final mixer preserves all other soundtrack regions.
 Check the brief against delivered frames and audio evidence; action descriptions do not establish timings.

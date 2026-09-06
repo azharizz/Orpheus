@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import httpx
 
-from orpheus.domain import projects, takes
+from orpheus.domain import families, family_agent, projects, takes
 from orpheus.ops import observability as o
 
 
@@ -86,22 +86,23 @@ class EvidenceChecks(unittest.TestCase):
         ):
             doc = projects.create(
                 load_case()["video_path"],
-                load_case()["sfx_path"],
                 context="Synthetic controller integration; not a recorded human performance",
             )
             pid = doc["id"]
-            source = projects.load(pid)["sfx_path"]
+            families.build_index(pid)
+            family = families.create(pid, "synthetic steps", [0.7, 1.1])
+            source = load_case()["sfx_path"]
             before = hashlib.sha256(source.read_bytes()).hexdigest()
             first = takes.add_take(
-                pid, source, "Imported existing SFX, validation fixture"
+                pid, source, "Imported existing SFX, validation fixture",
+                family_id=family["id"],
             )
             takes.add_take(
                 pid,
                 source,
                 "Same recording, storage comparison fixture; not an independent take",
+                family_id=family["id"],
             )
-            child = takes.fitting_project(pid, first["id"])
-            self.assertNotEqual(child["id"], pid)
             self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before)
             proposal = {
                 "take_id": first["id"],
@@ -138,8 +139,8 @@ class EvidenceChecks(unittest.TestCase):
                     yield LlmResponse(content=types.Content(role="model", parts=[part]))
 
             async def run():
-                folder = projects.project_dir(child["id"])
-                case = projects.load(child["id"])
+                folder = projects.project_dir(pid)
+                case = family_agent.load_case(pid, family["id"])
                 service = DatabaseSessionService(
                     db_url="sqlite+aiosqlite:///" + str(Path(tmp) / "sessions.sqlite")
                 )
@@ -199,7 +200,7 @@ class EvidenceChecks(unittest.TestCase):
                     "controller": "scripted; no paid inference or quality claim",
                     "real_adk": True,
                     "real_official_mcp": True,
-                    "separate_fitting_project": True,
+                    "family_scoped_fitting": True,
                     "original_preserved": True,
                     "tool_results": results,
                 },

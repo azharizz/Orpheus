@@ -9,8 +9,13 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from ..config import DATA_DIR, PROJECTS, prepare_storage
-from ..config import UPLOAD_LIMIT_BYTES as LIMIT
+from ..config import (
+    DATA_DIR,
+    FREE_DISK_MARGIN_BYTES,
+    PROJECTS,
+    VIDEO_UPLOAD_LIMIT_BYTES,
+    prepare_storage,
+)
 from . import media
 
 ROOT = DATA_DIR
@@ -33,12 +38,24 @@ def project_dir(project_id):
 def load(project_id):
     path = project_dir(project_id)
     doc = json.loads((path / "project.json").read_text())
+    if doc.get("schema") != "orpheus.v3":
+        raise ValueError("Unsupported project schema")
+    source_name = doc["preparation"]["original_files"]["video"]
     return {
         **doc,
         "video_path": path / "video.mp4",
+        "source_video_path": path / source_name,
         "original_path": path / "original.wav",
-        "sfx_path": path / "sfx.wav",
+        "mix_path": path / "mix.wav",
     }
+
+
+def digest(path):
+    value = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
 
 
 def ff(*args):
@@ -46,7 +63,7 @@ def ff(*args):
         ["ffmpeg", "-v", "error", "-nostdin", "-y", *map(str, args)],
         check=True,
         capture_output=True,
-        timeout=300,
+        timeout=7200,
     )
 
 
@@ -72,33 +89,8 @@ def probe(path):
 
 
 def frames(case, times, directory):
-    """Resolve requests to actual decoded frame timestamps, including the final frame."""
+    """Decode bounded timestamp seeks without enumerating every frame in a film."""
     directory.mkdir(parents=True, exist_ok=True)
-    info = json.loads(
-        subprocess.check_output(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-select_streams",
-                "v:0",
-                "-show_frames",
-                "-show_entries",
-                "frame=best_effort_timestamp_time",
-                "-of",
-                "json",
-                str(case["video_path"]),
-            ],
-            timeout=120,
-        )
-    )
-    pts = [
-        float(f["best_effort_timestamp_time"])
-        for f in info["frames"]
-        if "best_effort_timestamp_time" in f
-    ]
-    if not pts:
-        raise ValueError("No decoded video frames")
     result = []
     for t in times:
         if (
@@ -107,32 +99,31 @@ def frames(case, times, directory):
             or not 0 <= t < case["seconds"]
         ):
             raise ValueError("Frame outside clipped window")
-        actual = min(pts, key=lambda p: abs(p - t))
-        path = directory / f"frame-{actual:.6f}.jpg"
-        if not path.exists() or not path.stat().st_size:
-            ff(
-                "-i",
-                case["video_path"],
-                "-ss",
-                actual,
-                "-frames:v",
-                1,
-                "-vf",
-                "scale=512:-2,format=yuvj420p",
-                "-threads",
-                1,
-                "-q:v",
-                4,
-                path,
-            )
-        if not path.exists() or not path.stat().st_size:
+        requested = min(float(t), max(0.0, case["seconds"] - 0.001))
+        actual, path = requested, None
+        for attempt in (requested, max(0.0, case["seconds"] - 0.25)):
+            candidate = directory / f"frame-{attempt:.6f}.jpg"
+            try:
+                if not candidate.exists() or not candidate.stat().st_size:
+                    ff(
+                        "-ss", attempt, "-i", case["video_path"], "-frames:v", 1,
+                        "-vf", "scale=512:-2,format=yuvj420p", "-threads", 1,
+                        "-q:v", 4, candidate,
+                    )
+                if candidate.exists() and candidate.stat().st_size:
+                    actual, path = attempt, candidate
+                    break
+            except subprocess.SubprocessError:
+                candidate.unlink(missing_ok=True)
+        if path is None:
             raise ValueError("Frame could not be decoded")
         result.append((actual, path))
     return result
 
 
-def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
-    video, sfx = Path(video), Path(sfx)
+def create(video, context="", style="", video_name=None):
+    """Create one current-schema, video-first project."""
+    video = Path(video)
     if len(context) > 240 or len(style) > 240:
         raise ValueError("Context and sound brief are limited to 240 characters each")
     if video.suffix.lower() not in (
@@ -140,38 +131,42 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
         ".mov",
         ".webm",
         ".mkv",
-    ) or sfx.suffix.lower() not in (".wav", ".mp3", ".m4a", ".flac", ".ogg"):
+    ):
         raise ValueError("Unsupported file extension")
-    if any(not p.is_file() or not 0 < p.stat().st_size <= LIMIT for p in (video, sfx)):
-        raise ValueError("Each file must be nonempty and <=100 MiB")
-    vp, sp = probe(video), probe(sfx)
+    if not video.is_file() or not 0 < video.stat().st_size <= VIDEO_UPLOAD_LIMIT_BYTES:
+        raise ValueError("Video must be nonempty and within the configured limit")
+    vp = probe(video)
     if not any(s["codec_type"] == "video" for s in vp["streams"]):
         raise ValueError("Target must contain video")
-    if not any(s["codec_type"] == "audio" for s in sp["streams"]):
-        raise ValueError("SFX must contain audio")
     video_seconds = float(vp["format"]["duration"])
-    sfx_seconds = float(sp["format"]["duration"])
-    if not all(math.isfinite(t) and t > 0 for t in (video_seconds, sfx_seconds)):
+    if not math.isfinite(video_seconds) or video_seconds <= 0:
         raise ValueError("Media durations must be finite and positive")
-    seconds = min(30, video_seconds)
+    seconds = video_seconds
     if seconds < 0.5:
         raise ValueError("Video must be at least 0.5 seconds")
     has_audio = any(s["codec_type"] == "audio" for s in vp["streams"])
+    input_channels = int(
+        next((s.get("channels", 1) for s in vp["streams"] if s["codec_type"] == "audio"), 1)
+    )
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    pcm_bytes = round(seconds * media.RATE * 2 * (1 + (min(2, input_channels) if has_audio else 1)))
+    required_bytes = video.stat().st_size * 2 + pcm_bytes + FREE_DISK_MARGIN_BYTES
+    if shutil.disk_usage(PROJECTS).free < required_bytes:
+        raise ValueError("Insufficient free disk space for originals and prepared media")
     pid = uuid.uuid4().hex[:16]
     folder = project_dir(pid)
     folder.mkdir(parents=True)
     try:
         originals = folder / "originals"
         originals.mkdir()
-        for name, path in [("video", video), ("sfx", sfx)]:
+        supplied = [("video", video)]
+        for name, path in supplied:
             shutil.copyfile(path, originals / (name + path.suffix.lower()))
         ff(
             "-protocol_whitelist",
             "file,pipe",
             "-i",
             video,
-            "-t",
-            seconds,
             "-map",
             "0:v:0",
             "-map",
@@ -196,8 +191,6 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
                 "file,pipe",
                 "-i",
                 video,
-                "-t",
-                seconds,
                 "-map",
                 "0:a:0",
                 "-vn",
@@ -209,6 +202,22 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
                 "pcm_s16le",
                 folder / "original.wav",
             )
+            ff(
+                "-protocol_whitelist",
+                "file,pipe",
+                "-i",
+                video,
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ar",
+                48000,
+                "-ac",
+                min(2, input_channels),
+                "-c:a",
+                "pcm_s16le",
+                folder / "mix.wav",
+            )
         else:
             ff(
                 "-f",
@@ -219,38 +228,13 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
                 seconds,
                 folder / "original.wav",
             )
-        ff(
-            "-protocol_whitelist",
-            "file,pipe",
-            "-i",
-            sfx,
-            "-t",
-            30,
-            "-vn",
-            "-ar",
-            48000,
-            "-ac",
-            1,
-            "-c:a",
-            "pcm_s16le",
-            folder / "sfx.wav",
-        )
-        source_analysis = media.analyse(folder / "sfx.wav")
-        if source_analysis["body_dbfs"] < -65:
-            raise ValueError("SFX too quiet: supply a usable recording")
-        original_analysis = media.analyse(folder / "original.wav")
-        warnings = ["mono_analysis_copy", "whole_soundtrack_replacement"]
-        if video_seconds > 30:
-            warnings.append("video_truncated")
-        if sfx_seconds > 30:
-            warnings.append("source_truncated")
+            shutil.copyfile(folder / "original.wav", folder / "mix.wav")
+        warnings = ["mono_analysis_copy"]
         if not has_audio:
             warnings.append("no_original_audio")
-        if source_analysis["clipped_samples"]:
-            warnings.append("source_near_full_scale_samples")
-        if has_audio and original_analysis["clipped_samples"]:
-            warnings.append("original_near_full_scale_samples")
+        files = ["video.mp4", "original.wav", "mix.wav"]
         doc = {
+            "schema": "orpheus.v3",
             "id": pid,
             "seconds": seconds,
             "input_duration_s": float(vp["format"]["duration"]),
@@ -258,27 +242,22 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
             "style": style,
             "has_original_audio": has_audio,
             "video_name": (video_name or video.name)[:180],
-            "sfx_name": (sfx_name or sfx.name)[:180],
             "source_hashes": {
-                k: hashlib.sha256(p.read_bytes()).hexdigest()
-                for k, p in [("video", video), ("sfx", sfx)]
+                k: digest(p) for k, p in supplied
             },
             "prepared_hashes": {
-                n: hashlib.sha256((folder / n).read_bytes()).hexdigest()
-                for n in ["video.mp4", "original.wav", "sfx.wav"]
+                n: digest(folder / n) for n in files
             },
             "rights": "User-supplied local test media; no redistribution licence inferred.",
             "preparation": {
-                "sfx_input_duration_s": sfx_seconds,
-                "sfx_prepared_duration_s": source_analysis["duration_s"],
-                "video_truncated": video_seconds > 30,
-                "sfx_truncated": sfx_seconds > 30,
-                "analysis_format": "48kHz mono PCM16; original.wav extracted directly from uploaded video",
+                "video_truncated": False,
+                "analysis_format": "Full-duration 48kHz mono PCM16 analysis copy",
+                "mix_format": f"Full-duration 48kHz {min(2, input_channels) if has_audio else 1}-channel PCM16 working mix",
                 "original_files": {
                     name: "originals/" + name + path.suffix.lower()
-                    for name, path in [("video", video), ("sfx", sfx)]
+                    for name, path in supplied
                 },
-                "warning": "Private byte-for-byte originals retained; analysis is a separate clipped mono copy. Originals are not served over HTTP.",
+                "warning": "Private byte-for-byte originals retained; previews and analysis are derived copies. Originals are not served over HTTP.",
             },
             "input_warnings": warnings,
             "status": "ready",

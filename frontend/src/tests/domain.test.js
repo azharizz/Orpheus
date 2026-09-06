@@ -4,9 +4,11 @@ import {
   cue,
   validateFile,
   matchVolume,
-  editRow,
   candidates,
   label,
+  seedRange,
+  pendingMatches,
+  matchRange,
 } from "../state/domain.js";
 test("reject invalid recording boundaries and oversized media", () => {
   for (const n of ["", -1, 30, NaN, Infinity]) assert.throws(() => cue(n, 30));
@@ -22,21 +24,23 @@ test("level matching attenuates louder takes without amplification", () => {
   assert.ok(Math.abs(matchVolume(-12, [-24, -12]) - 0.2511886) < 1e-6);
   assert.equal(matchVolume(undefined, []), 1);
 });
-test("assisted edits preserve original evidence and sibling rows", () => {
-  const rows = [
-    { id: "a", source_range_s: [1, 2], evidence: "receipt" },
-    { id: "b" },
-  ];
-  const edited = editRow(rows, 0, "source_range_s.0", "1.2");
-  assert.deepEqual(rows[0].source_range_s, [1, 2]);
-  assert.equal(edited[0].evidence, "receipt");
-  assert.equal(edited[1], rows[1]);
-  assert.throws(() => editRow(rows, 0, "gain_db", ""));
+test("candidate inventory keeps completed agent renders", () => {
   assert.equal(
     candidates({
       turn_details: [{ candidates: [{ id: "a" }] }],
-      assisted_candidates: [{ id: "b" }],
     }).length,
-    2,
+    1,
   );
+});
+test("sound-family seeds and pending matches retain measured ranges", () => {
+  assert.deepEqual(seedRange("1.25", "1.8", 10), [1.25, 1.8]);
+  assert.throws(() => seedRange(2, 1, 10), /start before its end/);
+  const family = {
+    matches: [
+      { id: "m1", range_s: [1, 2], decision: "pending" },
+      { id: "m2", start_s: 3, end_s: 4, decision: "accept" },
+    ],
+  };
+  assert.deepEqual(pendingMatches(family).map((match) => match.id), ["m1"]);
+  assert.deepEqual(matchRange(family.matches[0]), [1, 2]);
 });

@@ -204,7 +204,7 @@ def render(
         "event_metrics": [],
         "flags": flags,
         "engineering_pass": not flags,
-        "warning": "Whole soundtrack replaced. Crossfaded repetition can repeat mechanical cycles or alter timbre. Coverage is not action sync; model cannot listen. No denoising or non-target preservation.",
+        "warning": "Agent layer only. The final family mixer confines it to accepted windows. Crossfaded repetition can repeat cycles or alter timbre; coverage is not action sync.",
     }
     atomic(folder / (rid + ".json"), receipt)
     return receipt

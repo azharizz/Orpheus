@@ -1,6 +1,6 @@
 import { registerMedia, claimMedia } from "../media/audio-focus.js";
 import React, { useCallback, useState } from "react";
-import { action, loadTakes, media, post, api, update } from "../state/store.js";
+import { action, loadFamilies, loadTakes, media, api, update } from "../state/store.js";
 import {
   useRecording,
   startRecording,
@@ -10,18 +10,25 @@ import {
 } from "../media/recording.js";
 import { time, matchVolume } from "../state/domain.js";
 
-export function Recorder({ p, state, transport }) {
+export function Recorder({ p, family, state, transport }) {
   const recording = useRecording();
   const [matched, setMatched] = useState(false);
   const [brief, setBrief] = useState("");
-  const [start, setStart] = useState(0);
+  const [start, setStart] = useState(family.seed_range_s?.[0] || 0);
   const bind = useCallback(() => {
     loadTakes(p.id);
   }, [p.id]);
-  const saved = state.takes[p.id];
+  const allTakes = state.takes[p.id]?.takes || [];
+  const saved = allTakes.filter((take) => take.family_id === family.id);
   const locked = recording.active || recording.pending || state.busy;
-  const metadata = { projectId: p.id, brief, start: Number(start) };
+  const metadata = {
+    projectId: p.id,
+    familyId: family.id,
+    brief,
+    start: Number(start),
+  };
   const report = (error) => update({ error: error.message });
+
   async function capture() {
     claimMedia();
     transport.pause();
@@ -30,46 +37,57 @@ export function Recorder({ p, state, transport }) {
         transport.video,
         metadata,
         p.seconds,
-        state.config.max_duration_s,
+        state.config.max_take_duration_s || 30,
       );
     } catch (error) {
       report(error);
     }
   }
+
   async function save() {
     const draft = recording.draft;
-    if (!draft || draft.projectId !== p.id) return;
-    const form = new FormData();
-    form.append("project_id", draft.projectId);
-    form.append("brief", draft.brief);
-    form.append("start_s", String(draft.start));
-    form.append("clock", draft.clock);
-    const name =
-      draft.blob instanceof File
-        ? draft.blob.name
-        : draft.blob.type.includes("mp4")
-          ? "take.m4a"
-          : "take.webm";
-    form.append("audio", draft.blob, name);
+    if (!draft || draft.projectId !== p.id || draft.familyId !== family.id)
+      return;
+    const query = new URLSearchParams({
+      project_id: draft.projectId,
+      family_id: draft.familyId,
+      brief: draft.brief || "",
+      start_s: String(draft.start),
+      clock: draft.clock,
+      filename:
+        draft.blob instanceof File
+          ? draft.blob.name
+          : draft.blob.type.includes("mp4")
+            ? "take.m4a"
+            : "take.webm",
+    });
     const result = await action(
-      () => api("/api/takes", { method: "POST", body: form }),
-      "Take saved locally. No inference started.",
+      () =>
+        api(`/api/takes?${query}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": draft.blob.type || "application/octet-stream",
+          },
+          body: draft.blob,
+        }),
+      `Replacement take saved for ${family.name}. No inference started.`,
     );
     if (result) {
       discard();
-      await loadTakes(p.id);
+      await Promise.all([loadTakes(p.id), loadFamilies(p.id)]);
     }
   }
+
   return (
-    <section className="record-section" ref={bind}>
-      <h2>Perform another take</h2>
+    <div className="replacement-recorder" ref={bind}>
       <label>
-        Prop and performance brief
+        Performance brief <span className="muted">Optional</span>
         <input
           value={brief}
           maxLength={state.config?.max_brief_chars || 240}
           disabled={locked}
-          onChange={(e) => setBrief(e.target.value)}
+          placeholder="Shorter heel, softer body"
+          onChange={(event) => setBrief(event.target.value)}
         />
       </label>
       <label>
@@ -81,12 +99,12 @@ export function Recorder({ p, state, transport }) {
           step="0.01"
           value={start}
           disabled={locked}
-          onChange={(e) => setStart(e.target.value)}
+          onChange={(event) => setStart(event.target.value)}
         />
       </label>
       <p className="muted">
-        Capture mutes picture audio. Browser capture timing is provisional; fit
-        the saved take before judging synchronization.
+        Capture mutes picture audio. Browser timing is provisional; the
+        renderer fits the saved take to each accepted moment.
       </p>
       <div className="actions">
         <button
@@ -117,24 +135,24 @@ export function Recorder({ p, state, transport }) {
         </p>
       )}
       <label>
-        Upload a take
+        Upload a replacement take
         <input
           type="file"
           accept=".wav,.mp3,.m4a,.flac,.ogg,.webm,.mp4"
           disabled={locked || !!recording.draft || !state.config}
-          onChange={(e) => {
-            const file = e.target.files[0];
-            if (file)
-              try {
-                uploadTake(
-                  file,
-                  metadata,
-                  state.config.max_file_bytes,
-                  p.seconds,
-                );
-              } catch (error) {
-                report(error);
-              }
+          onChange={(event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            try {
+              uploadTake(
+                file,
+                metadata,
+                state.config.max_audio_bytes,
+                p.seconds,
+              );
+            } catch (error) {
+              report(error);
+            }
           }}
         />
       </label>
@@ -142,91 +160,72 @@ export function Recorder({ p, state, transport }) {
         <div className="capture">
           <h3>Captured in this browser</h3>
           <p>
-            Audition before saving. Cue {time(recording.draft.start)};{" "}
+            Audition before saving · cue {time(recording.draft.start)} ·{" "}
             {recording.draft.brief || "No performance brief"}.
           </p>
           <audio
             controls
             src={recording.draft.url}
             ref={registerMedia}
-            onPlay={(e) => claimMedia(e.currentTarget)}
+            onPlay={(event) => claimMedia(event.currentTarget)}
           />
           <div className="actions">
             <button
-              disabled={state.busy || recording.draft.projectId !== p.id}
+              disabled={
+                state.busy ||
+                recording.draft.projectId !== p.id ||
+                recording.draft.familyId !== family.id
+              }
               onClick={save}
             >
-              Save this take
+              Save for {family.name}
             </button>
             <button disabled={state.busy} onClick={discard}>
               Discard unsaved take
             </button>
           </div>
-          {recording.draft.projectId !== p.id && (
-            <p>Return to its original project to save this take.</p>
-          )}
         </div>
       )}
-      <h3>Saved takes</h3>
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={matched}
-          onChange={(e) => setMatched(e.target.checked)}
-        />
-        Level-match audition to the quietest take (attenuation only)
-      </label>
-      {!saved ? (
-        <p>Loading saved recordings…</p>
-      ) : saved.takes.length ? (
-        saved.takes.map((t) => (
-          <article className="take-row" key={t.id}>
-            <h3>{t.brief || `Take ${t.id}`}</h3>
-            <p>
-              {time(t.profile.duration_s)} · Picture cue{" "}
-              {time(t.picture_start_s)} · {t.clock}
-            </p>
-            <TakePlayer
-              src={media(p.id, `takes/${t.id}.wav`)}
-              volume={
-                matched
-                  ? matchVolume(
-                      t.profile.body_dbfs,
-                      saved.takes.map((take) => take.profile.body_dbfs),
-                    )
-                  : 1
-              }
+      {saved.length > 0 && (
+        <details>
+          <summary>
+            {saved.length} saved {saved.length === 1 ? "take" : "takes"}
+          </summary>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={matched}
+              onChange={(event) => setMatched(event.target.checked)}
             />
-            <p className="muted">
-              Body {t.profile.body_dbfs} dBFS · Peak{" "}
-              {t.profile.sample_peak_dbfs} dBFS. Loudness is not quality.
-            </p>
-            <button
-              disabled={locked || state.running || !!recording.draft}
-              onClick={async () => {
-                const result = await action(
-                  () =>
-                    post("/api/takes/fit", { project_id: p.id, take_id: t.id }),
-                  "Linked fitting project created.",
-                );
-                if (result)
-                  window.location.assign(
-                    "/workspace?project=" + result.project.id,
-                  );
-              }}
-            >
-              Fit this take · sends media and uses API credit
-            </button>
-          </article>
-        ))
-      ) : (
-        <p>No saved takes. Record or upload one above.</p>
+            Level-match audition to the quietest take
+          </label>
+          {saved.map((take) => (
+            <article className="take-row" key={take.id}>
+              <h3>{take.brief || `Take ${take.id}`}</h3>
+              <p>
+                {time(take.profile.duration_s)} · cue{" "}
+                {time(take.picture_start_s)} · {take.clock}
+              </p>
+              <TakePlayer
+                src={media(p.id, `takes/${take.id}.wav`)}
+                volume={
+                  matched
+                    ? matchVolume(
+                        take.profile.body_dbfs,
+                        saved.map((item) => item.profile.body_dbfs),
+                      )
+                    : 1
+                }
+              />
+              <p className="muted">
+                Body {take.profile.body_dbfs} dBFS · peak{" "}
+                {take.profile.sample_peak_dbfs} dBFS. Loudness is not quality.
+              </p>
+            </article>
+          ))}
+        </details>
       )}
-      <details>
-        <summary>Proposed recording experiments</summary>
-        <pre>{JSON.stringify(saved?.experiments || [], null, 2)}</pre>
-      </details>
-    </section>
+    </div>
   );
 }
 

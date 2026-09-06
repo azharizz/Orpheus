@@ -12,9 +12,23 @@ DATA_DIR = Path(VALUES.get("ORPHEUS_DATA_DIR", ROOT / "data")).expanduser().reso
 PROJECTS = DATA_DIR / "projects"
 OBSERVABILITY_DIR = DATA_DIR / "observability"
 OBSERVABILITY_ASSETS = ROOT / "observability"
-UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024
-MEDIA_SECONDS = 30
+VIDEO_UPLOAD_LIMIT_BYTES = int(
+    VALUES.get("ORPHEUS_MAX_VIDEO_BYTES", 20 * 1024 * 1024 * 1024)
+)
+AUDIO_UPLOAD_LIMIT_BYTES = int(
+    VALUES.get("ORPHEUS_MAX_AUDIO_BYTES", 100 * 1024 * 1024)
+)
+FREE_DISK_MARGIN_BYTES = int(
+    VALUES.get("ORPHEUS_FREE_DISK_MARGIN_BYTES", 512 * 1024 * 1024)
+)
+if min(VIDEO_UPLOAD_LIMIT_BYTES, AUDIO_UPLOAD_LIMIT_BYTES, FREE_DISK_MARGIN_BYTES) <= 0:
+    raise ValueError("Media and free-disk limits must be positive")
+UPLOAD_LIMIT_BYTES = AUDIO_UPLOAD_LIMIT_BYTES
+MEDIA_SECONDS = None
 SAMPLE_RATE = 48000
+MAX_TAKE_DURATION_S = int(VALUES.get("ORPHEUS_MAX_TAKE_SECONDS", 30))
+if not 1 <= MAX_TAKE_DURATION_S <= 300:
+    raise ValueError("Take duration must be between 1 and 300 seconds")
 CONTROLLER_MODELS = [
     "deepseek/deepseek-v4-flash-vision-exp",
     "qwen/qwen3.8-flash",
@@ -36,7 +50,7 @@ def prepare_storage():
     OBSERVABILITY_DIR.mkdir(parents=True, exist_ok=True)
 
 
-MAX_FILE_BYTES = UPLOAD_LIMIT_BYTES
+MAX_FILE_BYTES = VIDEO_UPLOAD_LIMIT_BYTES
 MAX_DURATION_S = MEDIA_SECONDS
 MAX_BRIEF_CHARS = 240
 MAX_FEEDBACK_CHARS = 500

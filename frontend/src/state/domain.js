@@ -1,6 +1,5 @@
 export const candidates = (p) => [
   ...(p.turn_details || []).flatMap((t) => t.candidates || []),
-  ...(p.assisted_candidates || []),
 ];
 export function cue(value, duration) {
   const n = Number(value);
@@ -14,6 +13,23 @@ export function validateFile(file, limit) {
     throw Error(`File exceeds ${Math.round(limit / 1048576)} MiB.`);
   return file;
 }
+export function seedRange(start, end, duration) {
+  const range = [Number(start), Number(end)];
+  if (
+    range.some((value) => !Number.isFinite(value)) ||
+    range[0] < 0 ||
+    range[1] > duration ||
+    range[1] <= range[0]
+  )
+    throw Error("Sound example needs a start before its end, inside the film.");
+  return range;
+}
+export const pendingMatches = (family) =>
+  (family?.pending_matches || family?.matches || []).filter(
+    (match) => !match.decision || match.decision === "pending",
+  );
+export const matchRange = (match) =>
+  match.range_s || match.target_range_s || [match.start_s, match.end_s];
 export const time = (n) =>
   `${Math.floor((Number(n) || 0) / 60)
     .toString()
@@ -21,7 +37,6 @@ export const time = (n) =>
 export function label(value) {
   const known = {
     review_required: "Review required",
-    whole_soundtrack_replacement: "Whole soundtrack replacement",
     mono_analysis_copy: "Mono analysis copy",
     source_near_full_scale_samples: "Source near full scale",
   };
@@ -32,21 +47,4 @@ export function matchVolume(level, levels) {
   return Number.isFinite(level) && finite.length
     ? Math.min(1, 10 ** ((Math.min(...finite) - level) / 20))
     : 1;
-}
-export function editRow(rows, index, field, value) {
-  const numeric = Number(value);
-  if (value === "" || !Number.isFinite(numeric))
-    throw Error("Timing and gain need finite numeric values.");
-  return rows.map((row, i) =>
-    i !== index
-      ? row
-      : field.includes(".")
-        ? {
-            ...row,
-            [field.split(".")[0]]: row[field.split(".")[0]].map((n, j) =>
-              j === Number(field.split(".")[1]) ? numeric : n,
-            ),
-          }
-        : { ...row, [field]: numeric },
-  );
 }

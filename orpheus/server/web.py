@@ -3,29 +3,27 @@
 import argparse
 import asyncio
 import fcntl
-import io
 import json
 import re
 import subprocess
 import sys
 import tempfile
 import threading
-import wave
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import numpy as np
-
 from .. import config
-from ..domain import media, projects, review, takes
+from ..domain import families, family_agent, media, projects, review, takes
 from ..ops import observability as obs
 from .http import LocalHandler, RequestError
 
 LOCK = threading.RLock()
 UPLOAD_LOCK = threading.Lock()
 PROCESS = None
+INDEX_THREAD = None
+INDEX_QUEUE = []
 STATIC = config.ROOT / "frontend" / "dist"
 DEFAULT_FEEDBACK = "Create a fitted alternative from these files."
 
@@ -37,7 +35,35 @@ def busy():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
-    return PROCESS is not None and PROCESS.poll() is None
+    return (PROCESS is not None and PROCESS.poll() is None) or (
+        INDEX_THREAD is not None and INDEX_THREAD.is_alive()
+    )
+
+
+def start_index(project_id):
+    global INDEX_THREAD
+    with LOCK:
+        if project_id not in INDEX_QUEUE:
+            INDEX_QUEUE.append(project_id)
+        if INDEX_THREAD is not None and INDEX_THREAD.is_alive():
+            return True
+
+        def run():
+            global INDEX_THREAD
+            while True:
+                with LOCK:
+                    if not INDEX_QUEUE:
+                        INDEX_THREAD = None
+                        return
+                    pending = INDEX_QUEUE.pop(0)
+                try:
+                    families.build_index(pending)
+                except Exception:
+                    pass
+
+        INDEX_THREAD = threading.Thread(target=run, daemon=True, name="orpheus-index")
+        INDEX_THREAD.start()
+        return True
 
 
 @contextmanager
@@ -51,9 +77,9 @@ def mutation():
             yield
 
 
-def start(project_id, feedback):
+def start(project_id, family_id, feedback):
     global PROCESS
-    projects.load(project_id)
+    family_agent.load_case(project_id, family_id)
     if (
         not isinstance(feedback, str)
         or not 1 <= len(feedback) <= config.MAX_FEEDBACK_CHARS
@@ -69,6 +95,8 @@ def start(project_id, feedback):
                     "-m",
                     "orpheus.server.worker",
                     project_id,
+                    "--family-id",
+                    family_id,
                     "--feedback",
                     feedback,
                 ],
@@ -88,19 +116,18 @@ def project_list():
     ):
         try:
             doc = json.loads(path.read_text())
+            if doc.get("schema") != "orpheus.v3":
+                raise ValueError("Unsupported project schema")
             doc["turn_details"] = [
                 json.loads((path.parent / (tid + "-turn.json")).read_text())
                 for tid in doc["turns"]
                 if (path.parent / (tid + "-turn.json")).exists()
             ]
-            doc["assisted_candidates"] = [
-                json.loads(p.read_text())
-                for p in sorted(path.parent.glob("*-assisted.json"))
-            ]
             doc["human_reviews"] = [
                 json.loads(p.read_text())
                 for p in sorted(path.parent.glob("*-human.json"))
             ]
+            doc["similarity_index"] = families.index_status(doc["id"])
             rows.append(doc)
         except (ValueError, KeyError, OSError):
             errors.append(
@@ -119,6 +146,9 @@ def public_config():
     return {
         "max_file_bytes": config.MAX_FILE_BYTES,
         "max_duration_s": config.MAX_DURATION_S,
+        "max_audio_bytes": config.AUDIO_UPLOAD_LIMIT_BYTES,
+        "max_take_duration_s": config.MAX_TAKE_DURATION_S,
+        "free_disk_margin_bytes": config.FREE_DISK_MARGIN_BYTES,
         "max_brief_chars": config.MAX_BRIEF_CHARS,
         "max_feedback_chars": config.MAX_FEEDBACK_CHARS,
         "max_controller_calls": config.MAX_CONTROLLER_CALLS,
@@ -128,32 +158,6 @@ def public_config():
         "storage": "local",
         "inference_destination": "Configured controller providers; audio observation through OpenRouter when enabled",
     }
-
-
-def upload_files(form, directory, names):
-    result = {}
-    for field in names:
-        item = form.get(field)
-        if not isinstance(item, tuple) or len(item) != 2 or not item[0]:
-            raise ValueError("Choose one file for each required input.")
-        filename, data = item
-        if not 0 < len(data) <= config.MAX_FILE_BYTES:
-            raise RequestError(
-                "Each file must be nonempty and within the configured limit.", 413
-            )
-        filename = Path(filename.replace("\\", "/")).name
-        suffix = Path(filename).suffix.lower()
-        allowed = {
-            "video": (".mp4", ".mov", ".webm", ".mkv"),
-            "sfx": (".wav", ".mp3", ".m4a", ".flac", ".ogg"),
-            "audio": (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".mp4"),
-        }[field]
-        if suffix not in allowed:
-            raise ValueError("Unsupported media extension.")
-        path = directory / (field + suffix)
-        path.write_bytes(data)
-        result[field] = (path, filename)
-    return result
 
 
 class Handler(LocalHandler):
@@ -207,7 +211,16 @@ class Handler(LocalHandler):
                     ],
                 }
             )
-        elif route in ("/api/snippet", "/api/waveform"):
+        elif route == "/api/families":
+            pid = parse_qs(parsed.query)["project_id"][0]
+            projects.load(pid)
+            self.send_json(
+                {
+                    "families": families.list_families(pid),
+                    "index": families.index_status(pid),
+                }
+            )
+        elif route == "/api/waveform":
             self.audio_data(route, parse_qs(parsed.query))
         elif route.startswith("/projects/"):
             self.project_file(route.removeprefix("/projects/"))
@@ -216,8 +229,9 @@ class Handler(LocalHandler):
 
     def project_file(self, relative):
         allowed = re.fullmatch(
-            r"([a-f0-9]{16})/(video\.mp4|poster\.jpg|original\.wav|sfx\.wav|events\.jsonl|"
-            r"[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav)",
+            r"([a-f0-9]{16})/(video\.mp4|poster\.jpg|original\.wav|events\.jsonl|"
+            r"[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-master\.(?:mp4|mkv)|"
+            r"[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav)",
             relative,
         )
         if not allowed:
@@ -238,45 +252,16 @@ class Handler(LocalHandler):
 
     def audio_data(self, route, query):
         case = projects.load(query["project_id"][0])
-        if route == "/api/snippet":
-            source = media.read_audio(case["sfx_path"])
-            start, end = float(query["start"][0]), float(query["end"][0])
-            if (
-                not np.isfinite([start, end]).all()
-                or not 0 <= start < end <= len(source) / media.RATE
-            ):
-                raise ValueError("Invalid source window")
-            samples = source[round(start * media.RATE) : round(end * media.RATE)]
-            if not len(samples):
-                raise ValueError("Empty source window")
-            output = io.BytesIO()
-            with wave.open(output, "wb") as wav:
-                wav.setparams(
-                    (1, 2, media.RATE, len(samples), "NONE", "not compressed")
-                )
-                wav.writeframes(
-                    (np.clip(samples, -1, 1) * 32767).round().astype("<i2").tobytes()
-                )
-            self.send_bytes(output.getvalue(), "audio/wav")
-            return
         role = query["role"][0]
-        if role not in ("original", "sfx", "candidate"):
+        if role not in ("original", "candidate"):
             raise ValueError("Invalid waveform role")
         if role == "candidate":
             cid = query["candidate_id"][0]
             review.candidate(case, cid)
             path = projects.project_dir(case["id"]) / (cid + ".wav")
         else:
-            path = case["original_path" if role == "original" else "sfx_path"]
-        samples = media.read_audio(path)
-        buckets = np.array_split(np.abs(samples), min(600, len(samples)))
-        self.send_json(
-            {
-                "duration_s": len(samples) / media.RATE,
-                "sample_rate": media.RATE,
-                "peaks": [round(float(chunk.max()), 5) for chunk in buckets],
-            }
-        )
+            path = case["original_path"]
+        self.send_json(media.waveform(path))
 
     def do_POST(self):
         try:
@@ -318,53 +303,91 @@ class Handler(LocalHandler):
 
     def upload(self, route):
         take = route == "/api/takes"
+        query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+
+        def value(name, default=""):
+            values = query.get(name, [default])
+            if len(values) != 1:
+                raise ValueError("Repeated upload field")
+            return values[0]
+
+        filename = Path(value("filename").replace("\\", "/")).name
+        suffix = Path(filename).suffix.lower()
         allowed = (
-            {"project_id", "audio", "brief", "start_s", "clock"}
+            (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".mp4")
             if take
-            else {"video", "sfx", "context", "style"}
+            else (".mp4", ".mov", ".webm", ".mkv")
         )
-        form = self.read_form(
-            config.MAX_FILE_BYTES * (1 if take else 2) + 20000, allowed
-        )
+        if suffix not in allowed:
+            raise ValueError("Unsupported media extension")
         with tempfile.TemporaryDirectory(prefix="orpheus-upload-") as temporary:
-            files = upload_files(
-                form, Path(temporary), ["audio"] if take else ["video", "sfx"]
+            path = Path(temporary) / (("audio" if take else "video") + suffix)
+            self.read_file(
+                config.AUDIO_UPLOAD_LIMIT_BYTES if take else config.VIDEO_UPLOAD_LIMIT_BYTES,
+                path,
             )
             if take:
+                family_id = value("family_id")
+                if not family_id:
+                    raise ValueError("Replacement take requires a sound family")
                 with mutation():
                     result = takes.add_take(
-                        form["project_id"],
-                        files["audio"][0],
-                        form.get("brief", ""),
-                        float(form.get("start_s", "0")),
-                        form.get("clock", "uploaded"),
+                        value("project_id"),
+                        path,
+                        value("brief"),
+                        float(value("start_s", "0")),
+                        value("clock", "uploaded"),
+                        family_id,
                     )
             else:
                 result = {
                     "project": projects.create(
-                        files["video"][0],
-                        files["sfx"][0],
-                        form.get("context", ""),
-                        form.get("style", ""),
-                        files["video"][1],
-                        files["sfx"][1],
+                        path,
+                        context=value("context"),
+                        style=value("style"),
+                        video_name=filename,
                     )
                 }
+                start_index(result["project"]["id"])
         self.send_json(result, 201)
 
     def json_action(self, route):
         if route not in (
             "/api/run",
             "/api/review",
-            "/api/assist",
-            "/api/takes/fit",
+            "/api/families",
+            "/api/families/review",
+            "/api/families/render",
             "/api/grafana",
         ):
             raise RequestError("Route not found.", 404)
-        data = self.read_json(100000 if route == "/api/assist" else 3000)
+        data = self.read_json(100000 if route == "/api/families/review" else 3000)
         if route == "/api/run":
-            start(data["project_id"], data.get("feedback", DEFAULT_FEEDBACK))
-            self.send_json({"started": True, "project_id": data["project_id"]}, 202)
+            family_id = data.get("family_id")
+            if not family_id:
+                raise RequestError(
+                    "Choose a sound family and replacement take before running fitting.",
+                    409,
+                )
+            if data.get("consent") is not True:
+                raise RequestError("Confirm the paid fitting run before starting it.", 409)
+            try:
+                family_agent.load_case(data["project_id"], family_id)
+            except (ValueError, FileNotFoundError) as exc:
+                raise RequestError(str(exc), 409) from exc
+            start(
+                data["project_id"],
+                family_id,
+                data.get("feedback", DEFAULT_FEEDBACK),
+            )
+            self.send_json(
+                {
+                    "started": True,
+                    "project_id": data["project_id"],
+                    "family_id": family_id,
+                },
+                202,
+            )
         elif route == "/api/grafana":
             projects.load(data["project_id"])
             self.send_json(
@@ -376,22 +399,51 @@ class Handler(LocalHandler):
                     )
                 )
             )
-        elif route == "/api/takes/fit":
-            with LOCK:
-                with mutation():
-                    doc = takes.fitting_project(data["project_id"], data["take_id"])
-                start(
-                    doc["id"],
-                    "Query Grafana takes for the parent project. Compare recorded takes, propose one evidence-linked prop or performance experiment, then fit this selected take to picture and compare measurements through Grafana.",
-                )
-            self.send_json({"project": doc}, 201)
-        else:
+        elif route == "/api/families":
             with mutation():
-                result = (
-                    review.save_review(data)
-                    if route == "/api/review"
-                    else review.assist(data)
+                result = families.create(
+                    data["project_id"], data["name"], data["seed_range_s"]
                 )
+            self.send_json(result, 201)
+        elif route == "/api/families/review":
+            decisions = data.get("decisions")
+            if (
+                not isinstance(decisions, list)
+                or any(
+                    not isinstance(row, dict)
+                    or set(row) != {"match_id", "decision"}
+                    or row["decision"] not in ("accepted", "rejected")
+                    for row in decisions
+                )
+                or len({row["match_id"] for row in decisions}) != len(decisions)
+            ):
+                raise ValueError("Invalid match decision batch")
+            accepted = [
+                row["match_id"]
+                for row in decisions
+                if row.get("decision") == "accepted"
+            ]
+            rejected = [
+                row["match_id"]
+                for row in decisions
+                if row.get("decision") == "rejected"
+            ]
+            with mutation():
+                result = families.review(
+                    data["project_id"], data["family_id"], accepted, rejected
+                )
+            self.send_json(result, 201)
+        elif route == "/api/families/render":
+            with mutation():
+                result = families.render(
+                    data["project_id"],
+                    data["family_id"],
+                    data.get("take_id"),
+                )
+            self.send_json(result, 201)
+        elif route == "/api/review":
+            with mutation():
+                result = review.save_review(data)
             self.send_json(result, 201)
 
 

@@ -706,7 +706,7 @@ def render(case, bound, folder):
         },
         "flags": sorted(set(flags)),
         "engineering_pass": not flags,
-        "warning": "Whole soundtrack replacement. Explicit source chronology, no time stretch. Technical checks do not establish correct actions or natural sound.",
+        "warning": "Agent layer only; the final family mixer preserves unaccepted regions. Explicit source chronology, no time stretch. Technical checks do not establish natural sound.",
     }
     atomic(folder / (rid + ".json"), result)
     return result

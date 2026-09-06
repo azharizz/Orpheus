@@ -1,16 +1,21 @@
 """Real loopback HTTP coverage, using disposable generated media only."""
 
+import io
+import json
 import tempfile
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
+from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 
-from orpheus.domain import projects
+from orpheus.domain import families, projects, takes
 from orpheus.server import web
+from orpheus.server.http import LocalHandler
 from tests.support import load_case
 
 
@@ -66,20 +71,19 @@ class HttpChecks(unittest.TestCase):
 
     def test_prepare_take_and_seek_without_inference(self):
         case = load_case()
-        files = {
-            "video": ("scene.mp4", case["video_path"].read_bytes()),
-            "sfx": ("sound.wav", case["sfx_path"].read_bytes()),
-        }
         with patch.object(web, "start") as start:
             response = self.client.post(
-                "/api/projects", files=files, data={"context": "A synthetic test scene"}
+                "/api/projects",
+                params={"filename": "scene.mp4", "context": "A synthetic test scene"},
+                content=case["video_path"].read_bytes(),
+                headers={"Content-Type": "video/mp4"},
             )
             self.assertEqual(response.status_code, 201, response.text)
             doc = response.json()["project"]
             pid = doc["id"]
             self.assertEqual(doc["turns"], [])
             start.assert_not_called()
-            for name in ("video.mp4", "sfx.wav"):
+            for name in ("video.mp4", "original.wav"):
                 response = self.client.get(
                     f"/projects/{pid}/{name}", headers={"Range": "bytes=0-99"}
                 )
@@ -98,21 +102,39 @@ class HttpChecks(unittest.TestCase):
                 self.client.get(f"/projects/{pid}/poster.jpg").status_code, 200
             )
             response = self.client.get(
-                "/api/waveform", params={"project_id": pid, "role": "sfx"}
+                "/api/waveform", params={"project_id": pid, "role": "original"}
             )
             self.assertEqual(response.status_code, 200, response.text)
             self.assertTrue(response.json()["peaks"])
-            self.assertEqual(
-                self.client.get(
-                    "/api/snippet",
-                    params={"project_id": pid, "start": "nan", "end": "1"},
-                ).status_code,
-                400,
+            for _ in range(100):
+                status = self.client.get(
+                    "/api/families", params={"project_id": pid}
+                ).json()["index"]
+                if status["status"] == "ready":
+                    break
+                time.sleep(0.02)
+            self.assertEqual(status["status"], "ready")
+            response = self.client.post(
+                "/api/families",
+                json={
+                    "project_id": pid,
+                    "name": "Footsteps",
+                    "seed_range_s": [0.1, 0.5],
+                },
             )
+            self.assertEqual(response.status_code, 201, response.text)
+            family_id = response.json()["id"]
             response = self.client.post(
                 "/api/takes",
-                data={"project_id": pid, "start_s": "0", "brief": "New take"},
-                files={"audio": ("take.wav", case["sfx_path"].read_bytes())},
+                params={
+                    "filename": "take.wav",
+                    "project_id": pid,
+                    "family_id": family_id,
+                    "start_s": "0",
+                    "brief": "New take",
+                },
+                content=case["sfx_path"].read_bytes(),
+                headers={"Content-Type": "audio/wav"},
             )
             self.assertEqual(response.status_code, 201, response.text)
             tid = response.json()["id"]
@@ -129,60 +151,77 @@ class HttpChecks(unittest.TestCase):
             )
             start.assert_not_called()
             response = self.client.post("/api/run", json={"project_id": pid})
+            self.assertEqual(response.status_code, 409, response.text)
+            start.assert_not_called()
+            response = self.client.post(
+                "/api/run", json={"project_id": pid, "family_id": family_id}
+            )
+            self.assertEqual(response.status_code, 409, response.text)
+            start.assert_not_called()
+            response = self.client.post(
+                "/api/run",
+                json={"project_id": pid, "family_id": family_id, "consent": True},
+            )
             self.assertEqual(response.status_code, 202, response.text)
-            start.assert_called_once()
+            start.assert_called_once_with(pid, family_id, web.DEFAULT_FEEDBACK)
 
     def test_duplicate_upload_field_rejected(self):
         response = self.client.post(
-            "/api/projects",
-            files=[
-                ("video", ("a.mp4", b"x")),
-                ("video", ("b.mp4", b"x")),
-                ("sfx", ("a.wav", b"x")),
-            ],
+            "/api/projects?filename=a.mp4&filename=b.mp4",
+            content=b"x",
+            headers={"Content-Type": "video/mp4"},
         )
         self.assertEqual(response.status_code, 400, response.text)
 
-    def test_review_identity_and_assisted_revision(self):
-        import json
+    def test_file_body_is_read_in_bounded_chunks(self):
+        class Tracked(io.BytesIO):
+            largest = 0
 
-        from orpheus.domain import arrangement
-        from tests.workflow.test_mapped_workflow import fixture
+            def read(self, size=-1):
+                self.largest = max(self.largest, size)
+                return super().read(size)
 
+        body = Tracked(b"x" * (3 * 1024 * 1024 + 7))
+        headers = Message()
+        headers["Content-Length"] = str(len(body.getbuffer()))
+        handler = object.__new__(LocalHandler)
+        handler.headers, handler.rfile = headers, body
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "upload"
+            handler.read_file(len(body.getbuffer()), output)
+            self.assertEqual(output.stat().st_size, len(body.getbuffer()))
+        self.assertLessEqual(body.largest, 1024 * 1024)
+
+    def test_review_identity_and_removed_assisted_revision(self):
         source = load_case()
-        doc = projects.create(source["video_path"], source["sfx_path"])
-        case = projects.load(doc["id"])
-        folder = projects.project_dir(case["id"])
-        evidence, row = fixture(case)
-        row.update(anchor="contact", target_anchor_s=0.7, source_anchor_s=0.25)
-        bound = arrangement.bind([row], case, evidence, require_impact_anchors=True)
-        rendered = arrangement.render(case, bound, folder)
-        projects.atomic(folder / (rendered["id"] + ".json"), rendered)
-        payload = {"project_id": case["id"], "candidate_id": rendered["id"]}
+        doc = projects.create(source["video_path"])
+        families.build_index(doc["id"])
+        family = families.create(doc["id"], "shoe", [0.4, 0.9])
+        takes.add_take(doc["id"], source["sfx_path"], family_id=family["id"])
+        rendered = families.render(doc["id"], family["id"])
+        folder = projects.project_dir(doc["id"])
+        payload = {"project_id": doc["id"], "candidate_id": rendered["id"]}
         response = self.client.post(
             "/api/review", json={**payload, "verdict": "approve"}
         )
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["audio_sha256"], rendered["audio_sha256"])
-        revised_rows = [{**bound["rows"][0], "gain_db": -3}]
-        response = self.client.post(
-            "/api/assist", json={**payload, "rows": revised_rows}
-        )
-        self.assertEqual(response.status_code, 201, response.text)
-        revised = response.json()
-        self.assertNotEqual(revised["id"], rendered["id"])
-        self.assertFalse(revised["arrangement"]["human_approved"])
-        self.assertEqual(revised["arrangement"]["parent_candidate_id"], rendered["id"])
         self.assertEqual(
-            json.loads((folder / (rendered["id"] + ".json")).read_text()), rendered
+            self.client.post("/api/assist", json={**payload, "rows": []}).status_code,
+            404,
         )
-        revised_rows[0]["target_range_s"] = [0.5, 3]
+        receipt_path = folder / (rendered["id"] + ".json")
+        receipt = receipt_path.read_text()
+        invalid = json.loads(receipt)
+        invalid["schema"] = "arrangement-render.v1"
+        receipt_path.write_text(json.dumps(invalid))
         self.assertEqual(
             self.client.post(
-                "/api/assist", json={**payload, "rows": revised_rows}
+                "/api/review", json={**payload, "verdict": "reject"}
             ).status_code,
             400,
         )
+        receipt_path.write_text(receipt)
         with (folder / (rendered["id"] + ".wav")).open("ab") as stream:
             stream.write(b"changed")
         response = self.client.post(

@@ -4,6 +4,7 @@ import { useStore, action, api, update } from "../state/store.js";
 import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
+import "../styles/families.css";
 import { PhotographicTitle } from "./photographic-title.jsx";
 
 export function Disclosure({ title, children }) {
@@ -16,54 +17,46 @@ export function Disclosure({ title, children }) {
 }
 export const Json = ({ value }) => <pre>{JSON.stringify(value, null, 2)}</pre>;
 function Import({ config, busy }) {
-  const [files, setFiles] = useState({});
+  const [video, setVideo] = useState(null);
   async function submit(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const file = validateFile(video, config.max_file_bytes);
+    const query = new URLSearchParams({
+      filename: file.name,
+      context: String(form.get("context") || ""),
+      style: String(form.get("style") || ""),
+    });
     await action(async () => {
-      validateFile(form.get("video"), config.max_file_bytes);
-      validateFile(form.get("sfx"), config.max_file_bytes);
-      const result = await api("/api/projects", { method: "POST", body: form });
+      const result = await api(`/api/projects?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
       window.location.assign("/workspace?project=" + result.project.id);
-    }, "Media prepared locally. Ready for your explicit run.");
+    }, "Picture saved. Its sound index is preparing locally.");
   }
   return (
     <section className="import">
       <div>
-        <h1>
-          Bring a scene.
-          <br />
-          Find its sound.
-        </h1>
+        <h1>Bring the whole picture.</h1>
         <p>
-          Fit an independent recording to picture, then listen, inspect and
-          decide.
+          Mark one sound, find related moments across the film, then decide
+          which occurrences deserve a new performance.
         </p>
       </div>
       <form onSubmit={submit}>
-        <div className="file-pair">
-          {[
-            ["video", "Picture", ".mp4,.mov,.webm,.mkv"],
-            ["sfx", "Sound", ".wav,.mp3,.m4a,.flac,.ogg"],
-          ].map(([name, label, accept]) => (
-            <label className="file-input" key={name}>
-              <span>{label}</span>
-              <strong>
-                {files[name] ||
-                  `Choose ${name === "video" ? "video" : "sound"}`}
-              </strong>
-              <input
-                name={name}
-                type="file"
-                accept={accept}
-                required
-                onChange={(e) =>
-                  setFiles({ ...files, [name]: e.target.files[0]?.name })
-                }
-              />
-            </label>
-          ))}
-        </div>
+        <label className="file-input">
+          <span>Picture</span>
+          <strong>{video?.name || "Choose video"}</strong>
+          <input
+            name="video"
+            type="file"
+            accept=".mp4,.mov,.webm,.mkv"
+            required
+            onChange={(event) => setVideo(event.target.files[0] || null)}
+          />
+        </label>
         <label>
           What should make sound? <span className="muted">Optional</span>
           <input
@@ -81,22 +74,18 @@ function Import({ config, busy }) {
           />
         </label>
         <p>
-          Whole soundtrack replacement, including dialogue and ambience.
-          Original files are preserved.
+          Orpheus preserves the original and indexes its soundtrack on this
+          computer. Importing starts no paid inference.
         </p>
-        {config ? (
-          <p className="muted">
-            Opening {config.max_duration_s} seconds ·{" "}
-            {Math.round(config.max_file_bytes / 1048576)} MiB per file. Media is
-            saved on this computer. Importing starts no paid inference.
-          </p>
-        ) : (
-          <p>Loading active media limits…</p>
-        )}
+        <p className="muted">
+          {config
+            ? `Maximum file size ${Math.round(config.max_file_bytes / 1073741824)} GiB.`
+            : "Loading active media limits…"}
+        </p>
         <div className="import-actions">
           <span className="registration-frame">
-            <button className="primary" disabled={busy || !config}>
-              {busy ? "Preparing media…" : "Prepare project"}
+            <button className="primary" disabled={busy || !config || !video}>
+              {busy ? "Saving picture…" : "Create project"}
             </button>
           </span>
           <a className="registration-frame registration-frame-small" href="/?view=projects">
@@ -159,7 +148,7 @@ function ProjectLibrary({ projects, loading }) {
           </div>
           <span className="muted">
             Saved on this computer ·{" "}
-            {projects.length.toString().padStart(2, "0")} files
+            {projects.length.toString().padStart(2, "0")} {projects.length === 1 ? "file" : "files"}
           </span>
         </div>
         {loading ? (
@@ -196,10 +185,10 @@ function ProjectLibrary({ projects, loading }) {
           <div className="library-empty">
             <h2>Your first scene starts here.</h2>
             <p>
-              Bring a video and a separately recorded sound. Orpheus keeps the
-              picture, the source and every alternative together.
+              Bring a video, mark one sound, and review related moments. Orpheus keeps
+              the original and every alternative together.
             </p>
-            <a href="/workspace">Choose picture and sound</a>
+            <a href="/workspace">Choose a picture</a>
           </div>
         )}
       </section>

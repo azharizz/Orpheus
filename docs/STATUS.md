@@ -4,24 +4,25 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 
 ## Verified
 
-- Clean package exposes the complete v2 workflow tool inventory: 28 tools, with no v1 or legacy HTTP routes.
-- Backend suite: 70 tests pass, one opt-in live MCP test is skipped by default.
-- Live MCP proof: a real ADK run queried the official Loki/Prometheus MCP service and wrote a linked take experiment receipt.
-- Isolated Grafana stack: setup is idempotent, credentials remain in runtime storage, the collector is scraped by Prometheus, and the lab containers remain separate.
-- Authorized paid parity run: one turn, capped at 40 controller calls. OpenRouter served two controller models through explicit failover; the run completed with two measured candidates and `review_required`. No approval was invented.
-- HTTP coverage includes media preparation, origin checks, retired routes, range requests, waveforms, takes, explicit run dispatch, exact review identity, assisted revision lineage, and stale-audio rejection.
-- Frontend: 13 Node lifecycle/transport/domain checks pass and the Vite production build passes.
-- Browser QA covered landing/workspace at desktop and mobile widths, picture playback, independent-source playback, source/picture exclusivity, candidate switching, evidence rail, review disclosures, and the explicit paid-run consent gate.
-- Impeccable detector returned no findings for `frontend/src` after the bounded visual pass. Self-hosted Barlow Condensed and Source Sans 3 assets are licensed and bundled.
-- No `useEffect`, imperative DOM queries, reference-lab imports, or source file over 800 lines in application code.
+- Video-only streamed import preserves full duration and a byte-for-byte private original; the HTTP parser reads bounded 1 MiB chunks and checks free disk before preparation.
+- One current project schema is accepted. Legacy, v1, v2, single-SFX, assisted-revision, and whole-soundtrack HTTP paths are absent.
+- The compact local sound index is deterministic, cached by media/config hash, memory-mapped, batch-bounded, resumable, and uses exact cosine ranking.
+- Human-reviewed seeds, accepted ranges, rejected ranges, rescored queues, replacement-take ownership, and latest render state persist per sound family.
+- Selective renders duck and overlay only accepted windows, preserve PCM outside them, prevent clipping, warn on conservative dialogue/music overlap, and retain the untouched video stream in the master.
+- Agent fitting uses the same family take and accepted ranges, rejects layer samples outside those ranges, preserves explicit provider failover, and requires paid-run consent.
+- Grafana receives redacted family, match, take, candidate, review, and runtime evidence; take backfill reads the current family-scoped store.
+- Backend suite: 84 tests pass; one opt-in live MCP integration is skipped by default.
+- Frontend suite: 15 tests pass; the Vite production build passes.
+- Annotated shoe benchmark: 90% recall, 75% precision, 0.865 F2, 0.052 ms median refined-onset error, 61,244-byte index.
+- Real shoe-media parity completed import, 79-window indexing, batch decisions, family take, selective render, picture preservation, zero-clipping measurement, and exact hash-bound review.
+- Impeccable detection returned no findings on the finalized frontend; desktop and 390 px mobile browser passes found no horizontal overflow or missing action.
+- No `useEffect`; application source files stay below 800 lines.
 
 ## Known limits
 
-- The paid parity run is evidence of wiring and real-provider behavior only. Its own receipt keeps the result provisional: source character mismatch, timing/listening uncertainty, unresolved acoustic hypotheses, and whole-soundtrack replacement are disclosed for human review.
-- Browser capture still depends on the user's microphone permission and hardware. Automated tests cover cancellation, final chunk delivery, cleanup, mute restoration, and upload boundaries without granting that permission.
-- Grafana remains a separate operational UI. The application links to it and queries the official MCP service; it does not imitate Grafana's theme.
-- Cloud deployment, authentication, multi-user storage, and GCP integration remain outside this local scope.
-
-## Layout
-
-`orpheus/domain/` contains project, media and sound-editing services; `orpheus/agent/` contains the ADK workflow and prompts; `orpheus/server/` contains the loopback API and worker; and `orpheus/ops/` contains telemetry and Grafana helpers. `frontend/src/` is grouped into `app/`, `features/`, `media/`, `state/`, `styles/`, `assets/` and `tests/`. The top-level `observability/` directory contains isolated Grafana/Loki/Tempo/Prometheus assets. `tests/` uses generated temporary media and never depends on the reference lab at runtime.
+- Similarity measures acoustic resemblance, not semantic identity or calibrated probability. Every candidate requires listening and a human decision.
+- Speech/music overlap is a spectral warning, not source separation. Orpheus does not isolate stems.
+- One local indexing or fitting job runs at a time. Large media trades time for bounded memory and persistent progress.
+- Browser recording timing is not sample-synchronized to picture; the renderer refines alignment and the user must preview the result.
+- Provider-backed fitting can fail, cost money, or disagree with the local render. It remains optional and never carries approval forward.
+- Cloud hosting, accounts, collaboration, reusable cross-project learning, surround mastering, and automatic replacement remain outside this release.

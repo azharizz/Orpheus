@@ -1,10 +1,21 @@
 # Orpheus
 
-A local Foley workbench: prepare picture and independent sound, explicitly run fitting, audition alternatives, inspect evidence, and retain human judgments. Fit, Record and Review share one workspace.
+Orpheus is a local, single-user Foley workbench for finding repeated sound events in a complete video and replacing only the occurrences a human accepts.
+
+## Workflow
+
+1. Import one short video or full film. Orpheus preserves the source, creates a browser preview, extracts analysis audio, and builds a cached local sound index.
+2. Mark one clear occurrence of a weak or unwanted sound.
+3. Review acoustically similar moments. Similarity ranks candidates; it never changes audio automatically.
+4. Record or upload one replacement take for that sound family.
+5. Render locally, or explicitly authorize an optional paid agent-fitting pass.
+6. Compare the original and replacement, then approve or reject the exact rendered candidate.
+
+Accepted windows receive bounded gain ramps and the fitted replacement. Every unaccepted part of the soundtrack stays unchanged. Final masters reuse the untouched source video stream.
 
 ## Run locally
 
-Requires Python 3.11, FFmpeg/FFprobe, and Node.js 22.12 or newer.
+Requires Python 3.11+, FFmpeg/FFprobe, and Node.js 22.12+.
 
 ```sh
 python3.11 -m venv .venv
@@ -15,26 +26,30 @@ npm run build --prefix frontend
 .venv/bin/python -m orpheus
 ```
 
-Open http://127.0.0.1:8766. Set your OpenRouter key in `.env` before requesting paid fitting. Uploading prepares local media without starting inference. Runtime settings live in `orpheus/config.py`; project media and sessions live under `data/` (or `ORPHEUS_DATA_DIR`). The lab is not a runtime dependency.
+Open `http://127.0.0.1:8766`. The app has two routes: `/` and `/workspace`. Importing and local matching make no paid model calls. Configure OpenRouter in `.env` only for optional agent fitting; every run requires explicit consent and retains provider failover receipts.
 
-The interface serves two routes: `/` and `/workspace`. Inputs are clipped to the configured opening window; fitted output replaces the whole soundtrack. Originals remain private. Browser microphone capture requires explicit permission and does not save until you choose Save.
+Runtime limits live in `orpheus/config.py`. Media and sessions live under `data/`, or `ORPHEUS_DATA_DIR`. The reference lab is not a runtime dependency.
 
-## Check
+## Verify
 
 ```sh
-.venv/bin/python -m unittest discover -s tests -t .
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 npm test --prefix frontend
 npm run build --prefix frontend
+.venv/bin/python -m orpheus.ops.benchmark_similarity \
+  ../foley-agent-lab/assets/shoes-original.wav \
+  ../foley-lab/fixtures/platform-contacts.json
 ```
 
-The default tests use synthetic media and scripted model responses. They establish processing and workflow wiring, not autonomous perceptual quality. The optional real Grafana MCP check requires running services and `ORPHEUS_LIVE_MCP=1`.
+Default tests use generated media and scripted provider responses. The annotated benchmark measures the local retrieval queue; neither check certifies artistic quality. Set `ORPHEUS_LIVE_MCP=1` to run the optional local Grafana MCP integration check.
 
-The Python package is grouped by responsibility: `orpheus/domain/` owns project and media operations, `orpheus/agent/` owns ADK workflow tools and prompts, `orpheus/server/` owns the loopback API and worker, and `orpheus/ops/` owns telemetry and Grafana helpers. The frontend follows the same boundary in `frontend/src/` with `app/`, `features/`, `media/`, `state/`, `styles/`, `assets/`, and `tests/` folders.
+## Structure
 
-## Grafana
+- `orpheus/domain/`: media, sound-family, take, render, and review logic.
+- `orpheus/agent/`: bounded ADK fitting workflow and provider failover.
+- `orpheus/server/`: loopback API, streamed uploads, and one background worker.
+- `orpheus/ops/`: redacted telemetry, benchmark CLI, and Grafana helpers.
+- `frontend/src/`: two-page React interface using an external store and callback refs; no `useEffect`.
+- `observability/`: isolated Grafana, Loki, Tempo, and Prometheus assets.
 
-Provisioning, dashboards and Docker Compose are in `observability/`; the official MCP service is read-only. See `python -m orpheus.ops.grafana --help` for setup and collector commands. Credentials and the evidence outbox belong in runtime storage and must not be committed.
-
-## Status
-
-Read `docs/STATUS.md` for verified checks and remaining work. GCP deployment is outside this local delivery scope.
+See [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), [benchmark results](docs/SIMILARITY_BENCHMARK.md), and [verified status](docs/STATUS.md).

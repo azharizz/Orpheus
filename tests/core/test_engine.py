@@ -29,13 +29,12 @@ class Checks(unittest.TestCase):
             self.assertTrue(result[0][1].stat().st_size > 100)
             self.assertLess(result[0][0], case["seconds"])
 
-    def test_ingest_bounds_and_silent_source(self):
+    def test_ingest_retains_full_silent_video(self):
         from orpheus.domain import projects
 
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)
             video = folder / "long.mp4"
-            quiet = folder / "quiet.wav"
             ff(
                 "-f",
                 "lavfi",
@@ -47,12 +46,9 @@ class Checks(unittest.TestCase):
                 "libx264",
                 video,
             )
-            ff("-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", 1, quiet)
             with patch.object(projects, "PROJECTS", folder / "projects"):
-                with self.assertRaisesRegex(ValueError, "too quiet"):
-                    create(video, quiet)
-                p = create(video, load_case()["sfx_path"])
-                self.assertEqual(p["seconds"], 30)
+                p = create(video)
+                self.assertEqual(p["seconds"], 31)
                 self.assertFalse(p["has_original_audio"])
                 self.assertEqual(p["input_duration_s"], 31)
 

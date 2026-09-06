@@ -10,6 +10,7 @@ let state = {
   message: "",
   waveforms: {},
   takes: {},
+  families: {},
 };
 const listeners = new Set();
 export function update(patch) {
@@ -44,9 +45,11 @@ export const post = (path, data) =>
     body: JSON.stringify(data),
   });
 let refreshing = false;
+let familyProject = "";
 export async function refresh() {
   if (refreshing) return;
   refreshing = true;
+  const activeFamilyProject = familyProject;
   try {
     const data = await api("/api/projects");
     update({ ...data, loading: false });
@@ -56,11 +59,19 @@ export async function refresh() {
   const results = await Promise.allSettled([
     api("/api/config"),
     api("/api/observability"),
+    activeFamilyProject
+      ? api(`/api/families?project_id=${encodeURIComponent(activeFamilyProject)}`)
+      : Promise.resolve(null),
   ]);
   if (results[0].status === "fulfilled") update({ config: results[0].value });
   if (results[1].status === "fulfilled")
     update({ observability: results[1].value });
   else update({ observability: { error: results[1].reason.message } });
+  if (activeFamilyProject && results[2].status === "fulfilled") {
+    update({
+      families: { ...state.families, [activeFamilyProject]: results[2].value },
+    });
+  }
   refreshing = false;
 }
 export async function action(work, message) {
@@ -80,6 +91,30 @@ export async function action(work, message) {
 }
 export const media = (pid, name) =>
   `/projects/${encodeURIComponent(pid)}/${name}`;
+export function watchFamilies(pid) {
+  familyProject = pid;
+  if (!state.families[pid]) loadFamilies(pid);
+  return () => {
+    if (familyProject === pid) familyProject = "";
+  };
+}
+export async function loadFamilies(pid) {
+  try {
+    const data = await api(
+      `/api/families?project_id=${encodeURIComponent(pid)}`,
+    );
+    update({ families: { ...state.families, [pid]: data } });
+    return data;
+  } catch (error) {
+    update({
+      families: {
+        ...state.families,
+        [pid]: { families: [], error: error.message },
+      },
+    });
+    return undefined;
+  }
+}
 export async function loadTakes(pid) {
   try {
     const data = await api(`/api/takes?project_id=${encodeURIComponent(pid)}`);

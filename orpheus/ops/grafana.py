@@ -278,7 +278,7 @@ def backfill():
                     row.get("ts"),
                 )
                 count += 1
-        for role, name in [("target", "original.wav"), ("source", "sfx.wav")]:
+        for role, name in [("target", "original.wav")]:
             if (folder / name).exists():
                 obs.emit(
                     folder.name,
@@ -287,6 +287,14 @@ def backfill():
                     "input",
                     (folder / name).stat().st_mtime,
                 )
+        for receipt in (folder / "takes").glob("*.json") if (folder / "takes").exists() else ():
+            take = json.loads(receipt.read_text())
+            wav = receipt.with_suffix(".wav")
+            if wav.exists():
+                obs.emit(folder.name, "sound_profile", {
+                    "role": "source", "take_id": take["id"],
+                    "family_id": take.get("family_id"),
+                    "profile": obs.sound_profile(wav)}, "input", wav.stat().st_mtime)
     print("Historical event receipts queued:", count)
 
 

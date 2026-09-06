@@ -21,6 +21,25 @@ def read_audio(path):
         )
 
 
+def waveform(path, bins=600):
+    """Return bounded peak buckets without loading a feature-length WAV."""
+    with wave.open(str(path), "rb") as stream:
+        channels = stream.getnchannels()
+        if stream.getframerate() != RATE or channels not in (1, 2) or stream.getsampwidth() != 2:
+            raise ValueError("Expected 48kHz mono or stereo PCM16 WAV")
+        count = stream.getnframes()
+        width = max(1, math.ceil(count / min(bins, count)))
+        peaks = []
+        while len(peaks) < bins:
+            raw = stream.readframes(width)
+            if not raw:
+                break
+            samples = np.frombuffer(raw, dtype="<i2")
+            peaks.append(round(float(np.max(np.abs(samples.astype(float)))) / 32768, 5))
+    return {"duration_s": count / RATE, "sample_rate": RATE,
+            "channels": channels, "peaks": peaks}
+
+
 def db(x):
     return float(20 * np.log10(max(float(x), 1e-09)))
 
@@ -115,7 +134,7 @@ def picture_hash(path):
             "sha256",
             "-",
         ],
-        timeout=180,
+        timeout=7200,
         text=True,
     ).strip()
 

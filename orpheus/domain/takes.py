@@ -1,14 +1,15 @@
-"""Immutable Foley takes, local measurements, and reversible fitting projects."""
+"""Immutable family-scoped Foley takes and local measurements."""
 
-import hashlib
 import json
 import math
+import re
 import time
 import uuid
 from pathlib import Path
 
 from ..ops import observability as obs
-from .projects import LIMIT, atomic, create, ff, load, probe, project_dir
+from ..config import AUDIO_UPLOAD_LIMIT_BYTES, MAX_TAKE_DURATION_S
+from .projects import atomic, digest, ff, load, probe, project_dir
 
 
 def list_takes(pid):
@@ -20,8 +21,30 @@ def list_takes(pid):
     )
 
 
-def add_take(pid, path, brief="", start_s=0, clock="uploaded"):
+def validated_audio(pid, family_id, take_id):
+    if not isinstance(take_id, str) or not re.fullmatch(r"[a-f0-9]{12}", take_id):
+        raise ValueError("Invalid take ID")
+    folder = project_dir(pid) / "takes"
+    wav, receipt_path = folder / f"{take_id}.wav", folder / f"{take_id}.json"
+    if not wav.is_file() or not receipt_path.is_file():
+        raise ValueError("Unknown take")
+    receipt = json.loads(receipt_path.read_text())
+    if (
+        receipt.get("id") != take_id
+        or receipt.get("parent_project_id") != pid
+        or receipt.get("family_id") != family_id
+        or digest(wav) != receipt.get("audio_sha256")
+    ):
+        raise ValueError("Take provenance mismatch")
+    return wav, receipt
+
+
+def add_take(pid, path, brief="", start_s=0, clock="uploaded", family_id=None):
     case = load(pid)
+    if family_id:
+        from . import families
+
+        families.get(pid, family_id)
     path = Path(path)
     if not isinstance(brief, str) or len(brief) > 240:
         raise ValueError("Take brief <=240 characters")
@@ -38,7 +61,7 @@ def add_take(pid, path, brief="", start_s=0, clock="uploaded"):
         path.suffix.lower()
         not in (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".mp4")
         or not path.is_file()
-        or not 0 < path.stat().st_size <= LIMIT
+        or not 0 < path.stat().st_size <= AUDIO_UPLOAD_LIMIT_BYTES
     ):
         raise ValueError("Invalid audio upload")
     info = probe(path)
@@ -54,7 +77,7 @@ def add_take(pid, path, brief="", start_s=0, clock="uploaded"):
         "-i",
         path,
         "-t",
-        30,
+        MAX_TAKE_DURATION_S,
         "-vn",
         "-ar",
         48000,
@@ -75,13 +98,16 @@ def add_take(pid, path, brief="", start_s=0, clock="uploaded"):
         "picture_start_s": start_s,
         "clock": clock,
         "clock_uncertainty": "Browser capture and picture clocks are not sample-synchronized; inspect and fit, do not assume zero latency.",
-        "audio_sha256": hashlib.sha256(wav.read_bytes()).hexdigest(),
+        "audio_sha256": digest(wav),
         "profile": profile,
         "provenance": "user_take",
-        "truncated_to_30s": float(info["format"].get("duration", profile["duration_s"]))
-        > 30,
+        "family_id": family_id,
+        "truncated": float(info["format"].get("duration", profile["duration_s"]))
+        > MAX_TAKE_DURATION_S,
     }
     atomic(folder / (tid + ".json"), receipt)
+    if family_id:
+        families.assign_take(pid, family_id, tid)
     obs.emit(
         pid,
         "take_recorded",
@@ -94,34 +120,6 @@ def add_take(pid, path, brief="", start_s=0, clock="uploaded"):
         },
     )
     return receipt
-
-
-def fitting_project(pid, tid):
-    if not isinstance(tid, str) or not __import__("re").fullmatch("[a-f0-9]{12}", tid):
-        raise ValueError("Invalid take")
-    case = load(pid)
-    folder = project_dir(pid) / "takes"
-    take = json.loads((folder / (tid + ".json")).read_text())
-    wav = folder / (tid + ".wav")
-    if hashlib.sha256(wav.read_bytes()).hexdigest() != take["audio_sha256"]:
-        raise ValueError("Take changed")
-    doc = create(
-        case["video_path"],
-        wav,
-        case["context"],
-        case["style"],
-        video_name="Take fitting · " + case.get("video_name", "scene"),
-        sfx_name="Foley take " + tid,
-    )
-    doc.update(
-        take_parent_project_id=pid,
-        take_id=tid,
-        take_brief=take["brief"],
-        take_picture_start_s=take["picture_start_s"],
-        take_clock=take["clock"],
-    )
-    atomic(project_dir(doc["id"]) / "project.json", doc)
-    return doc
 
 
 def save_experiment(pid, proposal, receipt_id):

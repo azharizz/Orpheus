@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 
+import numpy as np
 from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.agents.run_config import RunConfig
 from google.adk.events import Event, EventActions
@@ -24,7 +25,8 @@ from ..config import (
     PACKAGE_DIR,
     TURN_TIMEOUT_SECONDS,
 )
-from ..domain.projects import atomic, frames, load, project_dir
+from ..domain import family_agent
+from ..domain.projects import atomic, digest as file_digest, frames, load, project_dir
 from ..ops import observability as obs
 
 APP = "orpheus"
@@ -103,14 +105,14 @@ async def repair_interrupted_tools(service, session):
     return len(pending)
 
 
-async def execute(pid, feedback="Create a fitted alternative from these files."):
+async def execute(pid, family_id, feedback="Create a fitted alternative from these files."):
     with (ROOT / "worker.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Another paid run is active")
         recover_orphaned_turns(pid)
-        return await run_turn(pid, feedback)
+        return await run_turn(pid, family_id, feedback)
 
 
 def recover_orphaned_turns(pid):
@@ -144,10 +146,10 @@ def recover_orphaned_turns(pid):
         atomic(folder / "project.json", manifest)
 
 
-async def run_turn(pid, feedback):
+async def run_turn(pid, family_id, feedback):
     if not isinstance(feedback, str) or not 1 <= len(feedback) <= 500:
         raise ValueError("Feedback is 1..500 characters")
-    case = load(pid)
+    case = family_agent.load_case(pid, family_id)
     folder = project_dir(pid)
     doc = json.loads((folder / "project.json").read_text())
     tid = uuid.uuid4().hex[:12]
@@ -156,6 +158,7 @@ async def run_turn(pid, feedback):
         "status": "running",
         "started_at": time.time(),
         "feedback": feedback,
+        "family_id": family_id,
         "models_used": [],
         "cycles": 0,
         "candidates": [],
@@ -182,6 +185,13 @@ async def run_turn(pid, feedback):
 
     def log(event, **fields):
         nonlocal provider_failed
+        if event == "candidate":
+            fields = {
+                **fields,
+                "family_id": family_id,
+                "agent_layer_only": True,
+            }
+            atomic(folder / (fields["id"] + ".json"), fields)
         if event == "model_failed":
             provider_failed = True
         if event == "model_response":
@@ -239,19 +249,20 @@ async def run_turn(pid, feedback):
     try:
         service = session_service()
         phase = "input_validation"
-        for name, digest in doc["prepared_hashes"].items():
-            if hashlib.sha256((folder / name).read_bytes()).hexdigest() != digest:
+        for name, expected_digest in doc["prepared_hashes"].items():
+            if file_digest(folder / name) != expected_digest:
                 raise ValueError("Prepared input changed")
         phase = "session"
+        session_id = pid + "-" + family_id
         session = await service.get_session(
-            app_name=APP, user_id="local", session_id=pid
+            app_name=APP, user_id="local", session_id=session_id
         )
         prior_events = len(session.events) if session else 0
         if session is None:
             session = await service.create_session(
                 app_name=APP,
                 user_id="local",
-                session_id=pid,
+                session_id=session_id,
                 state={"candidates": [], "notes": []},
             )
         repaired = await repair_interrupted_tools(service, session)
@@ -282,7 +293,7 @@ async def run_turn(pid, feedback):
         )
         log(
             "session_loaded",
-            session_id=pid,
+            session_id=session_id,
             prior_event_count=prior_events,
             prior_candidate_count=len(session.state.get("candidates", [])),
             notes=session.state.get("notes", []),
@@ -313,11 +324,14 @@ async def run_turn(pid, feedback):
                 ),
             ),
         )
-        for role, name in [("target", "original.wav"), ("source", "sfx.wav")]:
+        for role, path in [
+            ("target", case["original_path"]),
+            ("source", case["sfx_path"]),
+        ]:
             obs.emit(
                 pid,
                 "sound_profile",
-                {"role": role, "profile": obs.sound_profile(folder / name)},
+                {"role": role, "profile": obs.sound_profile(path)},
                 tid,
             )
         if obs.config():
@@ -332,9 +346,14 @@ async def run_turn(pid, feedback):
             )
         agent = build(case, folder, log)
         runner = Runner(app_name=APP, agent=agent, session_service=service)
-        times = [float(t) for t in range(int(case["seconds"]))] + [
-            max(0, case["seconds"] - 0.06)
-        ]
+        times = sorted(
+            set(
+                float(t)
+                for t in np.linspace(
+                    0, max(0, case["seconds"] - 0.06), min(12, max(2, int(case["seconds"])))
+                )
+            )
+        )
         phase = "overview"
         overview = frames(case, times, folder / "frames")
         message = types.Content(
@@ -343,7 +362,12 @@ async def run_turn(pid, feedback):
                 types.Part(
                     text=runtime_prompt(
                         "user_request",
-                        feedback=feedback,
+                        feedback=(
+                            feedback
+                            + " Work only inside the confirmed sound-family ranges: "
+                            + json.dumps(case["accepted_ranges"])
+                            + ". Do not add, move, or extend sound outside them."
+                        ),
                         context=case["context"],
                         style=case["style"],
                         seconds=case["seconds"],
@@ -356,7 +380,7 @@ async def run_turn(pid, feedback):
         async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
             async for event in runner.run_async(
                 user_id="local",
-                session_id=pid,
+                session_id=session_id,
                 new_message=message,
                 run_config=RunConfig(max_llm_calls=MAX_CONTROLLER_CALLS),
             ):
@@ -380,15 +404,32 @@ async def run_turn(pid, feedback):
                     elif part.text:
                         log("agent_message", text=part.text)
         session = await service.get_session(
-            app_name=APP, user_id="local", session_id=pid
+            app_name=APP, user_id="local", session_id=session_id
         )
+        phase = "family_render"
+        layers = list(turn["candidates"])
+        if turn["selection"] and turn["selection"]["candidate_id"]:
+            rendered = family_agent.render_selection(
+                pid, family_id, turn["selection"]["candidate_id"]
+            )
+            turn["agent_layers"] = layers
+            turn["candidates"] = [rendered]
+            turn["selection"] = {
+                **turn["selection"],
+                "agent_layer_candidate_id": turn["selection"]["candidate_id"],
+                "candidate_id": rendered["id"],
+                "family_id": family_id,
+            }
+        elif turn["selection"]:
+            turn["agent_layers"] = layers
+            turn["candidates"] = []
         turn["status"] = "review_required" if turn["selection"] else "incomplete"
         if not turn["selection"]:
             turn["incomplete_reason"] = (
                 "Loop ended without a selection; do not interpret generated candidates as approval."
             )
         turn["persistent_state"] = {
-            "session_id": pid,
+            "session_id": session_id,
             "event_count": len(session.events),
             "notes": session.state.get("notes", []),
             "arrangement_id": session.state.get("arrangement", {}).get("id")
@@ -398,6 +439,9 @@ async def run_turn(pid, feedback):
         }
         log("session_saved", **turn["persistent_state"])
     except Exception as exc:
+        if family_id and turn.get("candidates"):
+            turn["agent_layers"] = list(turn["candidates"])
+            turn["candidates"] = []
         turn["status"] = "failed"
         turn["error_type"] = type(exc).__name__
         turn["failure"] = failure_info(exc, phase, provider_failed)
@@ -434,8 +478,9 @@ async def run_turn(pid, feedback):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("project")
+    ap.add_argument("--family-id", required=True)
     ap.add_argument(
         "--feedback", default="Create a fitted alternative from these files."
     )
     a = ap.parse_args()
-    asyncio.run(execute(a.project, a.feedback))
+    asyncio.run(execute(a.project, a.family_id, a.feedback))

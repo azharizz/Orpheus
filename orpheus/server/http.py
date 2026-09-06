@@ -3,8 +3,7 @@
 import json
 import mimetypes
 import re
-from email import policy
-from email.parser import BytesParser
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 
 
@@ -138,36 +137,31 @@ class LocalHandler(BaseHTTPRequestHandler):
             raise RequestError("Expected a JSON object.")
         return data
 
-    def read_form(self, limit, allowed):
-        content_type = self.headers.get("Content-Type", "")
-        if self.headers.get_content_type() != "multipart/form-data":
-            raise RequestError("Choose files using the upload form.")
-        # ponytail: one bounded upload in memory; use streaming multipart for larger local limits.
-        message = BytesParser(policy=policy.default).parsebytes(
-            b"Content-Type: "
-            + content_type.encode("ascii")
-            + b"\r\nMIME-Version: 1.0\r\n\r\n"
-            + self.read_body(limit)
-        )
-        if not message.is_multipart() or message.defects:
-            raise RequestError("Malformed multipart upload.")
-        fields = {}
-        for part in message.iter_parts():
-            name = part.get_param("name", header="content-disposition")
-            if (
-                name not in allowed
-                or name in fields
-                or part.is_multipart()
-                or part.defects
-            ):
-                raise RequestError("Unexpected or repeated upload field.")
-            if part.get_content_disposition() != "form-data":
-                raise RequestError("Invalid upload field.")
-            filename = part.get_filename()
-            raw = part.get_payload(decode=True)
-            if raw is None:
-                raise RequestError("Invalid upload content.")
-            fields[name] = (
-                (filename, raw) if filename is not None else raw.decode("utf-8")
-            )
-        return fields
+    def read_file(self, limit, destination):
+        """Stream one bounded request body to disk without buffering the upload."""
+        lengths = self.headers.get_all("Content-Length") or []
+        if len(lengths) != 1 or self.headers.get("Transfer-Encoding"):
+            raise RequestError("One Content-Length is required.")
+        try:
+            length = int(lengths[0])
+        except ValueError:
+            raise RequestError("Invalid request length.") from None
+        if not 0 < length <= limit:
+            raise RequestError("Upload exceeds the configured size limit.", 413)
+        destination = Path(destination)
+        remaining = length
+        try:
+            with destination.open("wb") as output:
+                while remaining:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise RequestError("Upload was interrupted.")
+                    output.write(chunk)
+                    remaining -= len(chunk)
+        except TimeoutError:
+            destination.unlink(missing_ok=True)
+            raise RequestError("Upload timed out. Retry the upload.", 408) from None
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        return destination
