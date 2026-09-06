@@ -4,8 +4,7 @@ import { useStore, action, api, update } from "../state/store.js";
 import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
-import heroStep from "../assets/hero-step.webp";
-import heroReel from "../assets/hero-reel.webp";
+import { Shutters } from "./shutters.jsx";
 
 export function Disclosure({ title, children }) {
   return (
@@ -113,24 +112,14 @@ function Landing({ projects, loading }) {
           <span>PICTURE / SOUND / EVIDENCE</span>
           <span>LOCAL FOLEY WORKBENCH</span>
         </div>
+        <Shutters />
         <div className="entrance-title">
           <div className="hero-lockup">
-            <h1>ORPHEUS</h1>
             <p className="hero-mark">
               A PERFORMANCE
               <br />
               THAT BELONGS.
             </p>
-          </div>
-          <div className="hero-visual" aria-hidden="true">
-            <img
-              src={heroStep}
-              alt=""
-              width="1122"
-              height="1402"
-              fetchPriority="high"
-            />
-            <img src={heroReel} alt="" width="1122" height="1402" />
           </div>
           <div className="hero-copy">
             <p>
@@ -146,7 +135,7 @@ function Landing({ projects, loading }) {
         <div className="hero-foot">
           <span>LOCAL / SINGLE USER</span>
           <span>
-            SCROLL TO ENTER <b aria-hidden="true">↓</b>
+            SELECT A PHOTOGRAPH TO OPEN
           </span>
         </div>
       </section>
