@@ -1,12 +1,15 @@
 """Per-event fitting with qualified source snippets and explicit temporal plans."""
 
 import hashlib
+import itertools
 import math
 import subprocess
 import uuid
 import wave
+
 import numpy as np
-from .projects import media, ff, atomic
+
+from .projects import atomic, ff, media
 
 RATE = 48000
 MAX_PLAN_ROWS = 100
@@ -159,7 +162,9 @@ def validate_plan(plan, case):
         if not isinstance(e["evidence"], str) or not 1 <= len(e["evidence"]) <= 400:
             raise ValueError("Short temporal evidence required")
     times = [e["time_s"] for e in plan]
-    if times != sorted(times) or any(b - a < 0.05 for a, b in zip(times, times[1:])):
+    if times != sorted(times) or any(
+        b - a < 0.05 for a, b in itertools.pairwise(times)
+    ):
         raise ValueError("Sort events, at least 50ms apart")
     return plan
 

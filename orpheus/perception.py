@@ -7,16 +7,18 @@ import io
 import json
 import math
 import re
+import subprocess
 import time
 import wave
-import subprocess
 from pathlib import Path
+
 import httpx
 import numpy as np
-from .projects import media, atomic
-from .provider import provider_config
 
-from .config import AUDIO_MODEL as MODEL, AUDIO_MAX_TOKENS, VALUES, AUDIO_CALL_LIMIT
+from .config import AUDIO_CALL_LIMIT, AUDIO_MAX_TOKENS, VALUES
+from .config import AUDIO_MODEL as MODEL
+from .projects import atomic, media
+from .provider import provider_config
 
 MAX_INVENTORY_EVENTS = 100
 PROMPT = (Path(__file__).with_name("prompts") / "audio.md").read_text(encoding="utf-8")
@@ -188,7 +190,9 @@ def validate_inventory(doc, r):
         for key, limit in [("label", 160), ("evidence", 500)]:
             if not isinstance(row[key], str) or not 1 <= len(row[key]) <= limit:
                 raise ValueError("Invalid description")
-            if re.search(r"[-+]?\d+(?:\.\d+)?\s*(?:LUFS|dBFS|dBTP)\b", row[key], re.I):
+            if re.search(
+                r"[-+]?\d+(?:\.\d+)?\s*(?:LUFS|dBFS|dBTP)\b", row[key], re.IGNORECASE
+            ):
                 raise ValueError("Model cannot invent calibrated loudness measurements")
         for key in ("onset_range_s", "offset_range_s"):
             v = row[key]

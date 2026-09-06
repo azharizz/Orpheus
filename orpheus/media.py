@@ -5,7 +5,9 @@ import re
 import struct
 import subprocess
 import wave
+
 import numpy as np
+
 from .config import SAMPLE_RATE as RATE
 
 
@@ -54,7 +56,7 @@ def detect(samples, sensitivity_db=12.0, min_gap_s=0.25):
     ]
     chosen = []
     for i in sorted(peaks, key=lambda i: float(env[i]), reverse=True):
-        if all((abs(i - j) * 0.01 >= min_gap_s for j in chosen)):
+        if all(abs(i - j) * 0.01 >= min_gap_s for j in chosen):
             chosen.append(i)
     events = []
     for i in sorted(chosen):
@@ -175,7 +177,7 @@ def encoded_timing(path, placements):
         ],
         timeout=45,
     )
-    pcm = struct.unpack("<%df" % (len(raw) // 4), raw)
+    pcm = struct.unpack(f"<{len(raw) // 4}f", raw)
     rows = []
     for i, p in enumerate(placements):
         target = p["scheduled_peak_s"]

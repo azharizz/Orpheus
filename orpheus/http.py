@@ -3,7 +3,6 @@
 import json
 import mimetypes
 import re
-import socket
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler
@@ -121,7 +120,7 @@ class LocalHandler(BaseHTTPRequestHandler):
             raise RequestError("Request body is empty.")
         try:
             data = self.rfile.read(length)
-        except socket.timeout:
+        except TimeoutError:
             raise RequestError("Upload timed out. Retry the upload.", 408) from None
         if len(data) != length:
             raise RequestError("Upload was interrupted.")

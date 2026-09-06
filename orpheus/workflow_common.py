@@ -1,11 +1,11 @@
 """Stateful ADK perception -> plan -> render -> evaluate -> revise loop."""
 
-from google.genai import types
-from . import perception
-from . import arrangement
 from pathlib import Path
 
-MAX_CONTROLLER_CALLS = 40
+from google.genai import types
+
+from . import arrangement, perception
+
 COMPLETION_WARNING_CALL = 25
 INSPECTION_STOP_CALL = 30
 MAX_REVIEW_BATCH_CENTERS = 5

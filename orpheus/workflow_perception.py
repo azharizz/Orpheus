@@ -1,13 +1,21 @@
-from google.adk.tools import ToolContext
-from .projects import ff
-from . import fitting
-from .projects import frames
 import hashlib
 import json
-from .projects import media
-from . import perception
 import subprocess
-from .workflow_common import MAX_ADAPTIVE_FRAMES_PER_CALL, MAX_ADAPTIVE_FRAMES_PER_TURN, MAX_AUDIO_REVIEWS, MAX_REVIEW_BATCH_CENTERS, MAX_REVIEW_CENTERS_PER_CYCLE, MAX_REVIEW_CENTERS_PER_TURN, MAX_WAVEFORM_CALLS, inspection_scope
+
+from google.adk.tools import ToolContext
+
+from . import fitting, perception
+from .projects import ff, frames, media
+from .workflow_common import (
+    MAX_ADAPTIVE_FRAMES_PER_CALL,
+    MAX_ADAPTIVE_FRAMES_PER_TURN,
+    MAX_AUDIO_REVIEWS,
+    MAX_REVIEW_BATCH_CENTERS,
+    MAX_REVIEW_CENTERS_PER_CYCLE,
+    MAX_REVIEW_CENTERS_PER_TURN,
+    MAX_WAVEFORM_CALLS,
+    inspection_scope,
+)
 
 
 class PerceptionTools:
@@ -460,7 +468,7 @@ class PerceptionTools:
             fitting.bounded(center_s, 0, self.case["seconds"] - 0.01, "center_s")
         except ValueError as exc:
             return {"error": str(exc)}
-        if not any((abs(center_s - t) <= 0.05 for t in s.get("delivered_centers", []))):
+        if not any(abs(center_s - t) <= 0.05 for t in s.get("delivered_centers", [])):
             return {"error": "Review images must be delivered to the model first"}
         s["event_reviews"] = [
             *s.get("event_reviews", []),
@@ -486,11 +494,9 @@ class PerceptionTools:
             ):
                 raise ValueError(f"Provide 1..{MAX_REVIEW_BATCH_CENTERS} reviews")
             if any(
-                (
-                    not isinstance(r, dict)
-                    or set(r) != {"center_s", "verdict", "observation"}
-                    for r in rows
-                )
+                not isinstance(r, dict)
+                or set(r) != {"center_s", "verdict", "observation"}
+                for r in rows
             ):
                 raise ValueError("Each review needs center_s, verdict, observation")
             return {

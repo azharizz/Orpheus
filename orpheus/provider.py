@@ -3,10 +3,13 @@
 import time
 from typing import Any
 from urllib.parse import urlparse
+
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.lite_llm import LiteLlm
 from pydantic import PrivateAttr
-from .config import VALUES, CONTROLLER_MODELS as MODELS, CONTROLLER_MAX_TOKENS
+
+from .config import CONTROLLER_MAX_TOKENS, VALUES
+from .config import CONTROLLER_MODELS as MODELS
 
 
 def provider_config():
@@ -73,8 +76,8 @@ class ControllerModel(BaseLlm):
                 ]
                 if (
                     not responses
-                    or any((r.error_code for r in responses))
-                    or (not any((r.content and r.content.parts for r in responses)))
+                    or any(r.error_code for r in responses)
+                    or (not any(r.content and r.content.parts for r in responses))
                 ):
                     raise RuntimeError("Unusable provider response")
             except Exception as exc:

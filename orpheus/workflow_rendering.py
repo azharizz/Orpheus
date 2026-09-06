@@ -1,10 +1,10 @@
-from google.adk.tools import ToolContext
-from . import arrangement
-from . import fitting
-from .projects import media
-from . import observability as obs
 import re
-from . import texture
+
+from google.adk.tools import ToolContext
+
+from . import arrangement, fitting, texture
+from . import observability as obs
+from .projects import media
 from .workflow_common import perception_gate
 
 
@@ -19,12 +19,8 @@ class RenderingTools:
                 raise ValueError("Inspect scene first")
             plan = fitting.validate_plan(json.loads(events_json), self.case)
             if any(
-                (
-                    not any(
-                        (abs(e["time_s"] - t) <= 0.2 for t in s.get("reviewed", []))
-                    )
-                    for e in plan
-                )
+                not any(abs(e["time_s"] - t) <= 0.2 for t in s.get("reviewed", []))
+                for e in plan
             ):
                 raise ValueError(
                     "Every proposed event needs review_moments within 0.2s this turn"
@@ -37,7 +33,7 @@ class RenderingTools:
                 nearest = min(nearby, key=lambda r: abs(e["time_s"] - r["center_s"]))[
                     "center_s"
                 ]
-                latest = next((r for r in reversed(nearby) if r["center_s"] == nearest))
+                latest = next(r for r in reversed(nearby) if r["center_s"] == nearest)
                 if latest["verdict"] == "non_target":
                     raise ValueError("Nearest reviewed event is non_target")
                 if latest["verdict"] == "uncertain" and e["confidence"] != "uncertain":
@@ -146,7 +142,7 @@ class RenderingTools:
                 (start_s + end_s) / 2,
                 min(end_s, self.case["seconds"] - 0.01),
             ]:
-                if not any((abs(t - x) <= 0.2 for x in s.get("delivered_centers", []))):
+                if not any(abs(t - x) <= 0.2 for x in s.get("delivered_centers", [])):
                     raise ValueError(
                         "Review and record target interval start, middle and end first"
                     )
@@ -180,10 +176,10 @@ class RenderingTools:
             "\\b(?:not|never|no)\\b[^.;:]{0,40}\\b(?:verified|confirmed|perfect|ground truth)\\b",
             "",
             note,
-            flags=re.I,
+            flags=re.IGNORECASE,
         )
         if re.search(
-            "\\b(verified|confirmed|perfect|ground truth)\\b", assertion, re.I
+            "\\b(verified|confirmed|perfect|ground truth)\\b", assertion, re.IGNORECASE
         ):
             return {
                 "error": "Use hypothesis/uncertainty language, not verification claims. No human approval has been supplied to this tool."
@@ -330,9 +326,7 @@ class RenderingTools:
         if (
             not isinstance(unresolved, list)
             or len(unresolved) > 15
-            or any(
-                (not isinstance(x, str) or not 1 <= len(x) <= 500 for x in unresolved)
-            )
+            or any(not isinstance(x, str) or not 1 <= len(x) <= 500 for x in unresolved)
         ):
             return {
                 "error": "Provide at most 15 unresolved items, each 1..500 characters; consolidate without hiding unresolved issues."

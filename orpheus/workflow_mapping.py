@@ -1,7 +1,9 @@
-from google.adk.tools import ToolContext
-from . import arrangement
 import hashlib
 import json
+
+from google.adk.tools import ToolContext
+
+from . import arrangement
 from .projects import media
 from .workflow_common import MAX_BATCH_MAPPING_ROWS
 
@@ -88,7 +90,7 @@ class MappingTools:
     def _inspect_mapping_source(self, mapping_id, tool_context):
         current = tool_context.state.get("arrangement", {})
         try:
-            row = next((r for r in current.get("rows", []) if r["id"] == mapping_id))
+            row = next(r for r in current.get("rows", []) if r["id"] == mapping_id)
             arrangement.bind(
                 current["rows"], self.case, tool_context.state.get("audio_evidence", {})
             )
@@ -148,10 +150,8 @@ class MappingTools:
                 "error": f"mapping_ids must contain 1..{MAX_BATCH_MAPPING_ROWS} row IDs"
             }
         if any(
-            (
-                not isinstance(mapping_id, str) or not mapping_id
-                for mapping_id in mapping_ids
-            )
+            not isinstance(mapping_id, str) or not mapping_id
+            for mapping_id in mapping_ids
         ):
             return {"error": "mapping_ids must contain non-empty row ID strings"}
         results = []
@@ -183,7 +183,7 @@ class MappingTools:
         if not isinstance(reason, str) or not 1 <= len(reason) <= 500:
             return {"error": "Reason 1..500 characters required"}
         try:
-            row = next((r for r in current["rows"] if r["id"] == mapping_id))
+            row = next(r for r in current["rows"] if r["id"] == mapping_id)
             source_review = tool_context.state.get("source_option_reviews", {}).get(
                 mapping_id
             )
@@ -202,7 +202,7 @@ class MappingTools:
             rows = [fitted if r["id"] == mapping_id else r for r in current["rows"]]
             result = self.save_arrangement(json.dumps(rows), tool_context)
             if "error" not in result:
-                fitted_row = next((r for r in result["rows"] if r["id"] == mapping_id))
+                fitted_row = next(r for r in result["rows"] if r["id"] == mapping_id)
                 fits = dict(tool_context.state.get("impact_fit_receipts", {}))
                 fits[mapping_id] = {
                     "mapping_id": mapping_id,
@@ -295,11 +295,9 @@ class MappingTools:
                 failed.append(mapping_id)
             else:
                 row = next(
-                    (
-                        r
-                        for r in tool_context.state["arrangement"]["rows"]
-                        if r["id"] == mapping_id
-                    )
+                    r
+                    for r in tool_context.state["arrangement"]["rows"]
+                    if r["id"] == mapping_id
                 )
                 results.append(
                     {

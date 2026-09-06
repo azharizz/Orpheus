@@ -4,9 +4,11 @@ import hashlib
 import subprocess
 import uuid
 import wave
+
 import numpy as np
-from .projects import media, ff, atomic
-from .fitting import bounded, RATE
+
+from .fitting import RATE, bounded
+from .projects import atomic, ff, media
 
 
 def assemble(source, duration_s, crossfade_s, repeat):

@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,8 +40,15 @@ MAX_FILE_BYTES = UPLOAD_LIMIT_BYTES
 MAX_DURATION_S = MEDIA_SECONDS
 MAX_BRIEF_CHARS = 240
 MAX_FEEDBACK_CHARS = 500
+SERVER_PORT = int(VALUES.get("ORPHEUS_SERVER_PORT", 8766))
+if not 1024 <= SERVER_PORT <= 65535:
+    raise ValueError("Orpheus server port must be between 1024 and 65535")
 
-AUDIO_ENABLED = str(VALUES.get("ORPHEUS_AUDIO_ENABLED", "1")).lower() in ("1", "true", "yes")
+AUDIO_ENABLED = str(VALUES.get("ORPHEUS_AUDIO_ENABLED", "1")).lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # Separate loopback ports keep the reference lab and clean application independent.
 GRAFANA_PORTS = {
@@ -52,6 +60,13 @@ GRAFANA_PORTS = {
     "MCP": 18001,
     "METRICS": 19464,
 }
-GRAFANA_PORTS = {name: int(VALUES.get("ORPHEUS_" + name + "_PORT", value)) for name, value in GRAFANA_PORTS.items()}
-if any(not 1024 <= port <= 65535 for port in GRAFANA_PORTS.values()) or len(set(GRAFANA_PORTS.values())) != len(GRAFANA_PORTS):
-    raise ValueError("Orpheus observability ports must be distinct values from 1024 to 65535")
+GRAFANA_PORTS = {
+    name: int(VALUES.get("ORPHEUS_" + name + "_PORT", value))
+    for name, value in GRAFANA_PORTS.items()
+}
+if any(not 1024 <= port <= 65535 for port in GRAFANA_PORTS.values()) or len(
+    set(GRAFANA_PORTS.values())
+) != len(GRAFANA_PORTS):
+    raise ValueError(
+        "Orpheus observability ports must be distinct values from 1024 to 65535"
+    )

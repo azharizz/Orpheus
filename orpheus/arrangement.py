@@ -6,14 +6,18 @@ artistically correct.
 """
 
 from __future__ import annotations
-import math
+
 import hashlib
+import itertools
 import json
+import math
+import subprocess
 import uuid
 import wave
-import subprocess
+
 import numpy as np
-from .projects import media, atomic, ff
+
+from .projects import atomic, ff, media
 from .texture import assemble as repeat_audio
 
 RATE = 48000
@@ -464,7 +468,8 @@ def stage_rows(rows, mapping_id, phases):
         }
         staged.append(row)
     if any(
-        a["target_anchor_s"] > b["target_anchor_s"] for a, b in zip(staged, staged[1:])
+        a["target_anchor_s"] > b["target_anchor_s"]
+        for a, b in itertools.pairwise(staged)
     ):
         raise ValueError("Phase anchors must follow target chronology")
     retained = [

@@ -6,11 +6,16 @@ import {
   matchVolume,
   editRow,
   candidates,
+  label,
 } from "./domain.js";
 test("reject invalid recording boundaries and oversized media", () => {
   for (const n of ["", -1, 30, NaN, Infinity]) assert.throws(() => cue(n, 30));
   assert.equal(cue("29.9", 30), 29.9);
   assert.throws(() => validateFile({ size: 101 }, 100));
+});
+test("labels stored status codes for people while preserving unknown wording", () => {
+  assert.equal(label("review_required"), "Review required");
+  assert.equal(label("new_state"), "new state");
 });
 test("level matching attenuates louder takes without amplification", () => {
   assert.equal(matchVolume(-24, [-24, -12]), 1);

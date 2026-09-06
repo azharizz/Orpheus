@@ -4,13 +4,15 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import subprocess
 import uuid
-import shutil
 from pathlib import Path
 
 from . import media
-from .config import PROJECTS, UPLOAD_LIMIT_BYTES as LIMIT, prepare_storage
+from .config import DATA_DIR, PROJECTS, UPLOAD_LIMIT_BYTES as LIMIT, prepare_storage
+
+ROOT = DATA_DIR
 
 prepare_storage()
 
@@ -290,6 +292,3 @@ def create(video, sfx, context="", style="", video_name=None, sfx_name=None):
             {"error": "Media preparation failed; no agent called"},
         )
         raise
-
-# Public storage root used by workers and HTTP handlers.
-from .config import DATA_DIR as ROOT

@@ -1,7 +1,7 @@
 import { registerMedia, claimMedia } from "./audio-focus.js";
 import React, { useState, useCallback } from "react";
 import { post, action, media, loadWave, update } from "./store.js";
-import { candidates, time } from "./domain.js";
+import { candidates, time, label } from "./domain.js";
 import { Transport } from "./transport.js";
 import { Recorder } from "./takes.jsx";
 import { Evidence } from "./evidence.jsx";
@@ -158,7 +158,7 @@ export function Workspace({ project: p, state }) {
         <div>
           <h1>{p.video_name}</h1>
           <p>
-            {time(p.seconds)} · {p.status} ·{" "}
+            {time(p.seconds)} · {label(p.status)} ·{" "}
             {p.has_original_audio
               ? "Original audio present"
               : "No original audio — picture evidence only"}
@@ -466,7 +466,7 @@ export function Workspace({ project: p, state }) {
             )}
             {p.input_warnings?.length > 0 && (
               <p className="warning">
-                Input notices: {p.input_warnings.join(", ")}
+                Input notices: {p.input_warnings.map(label).join(", ")}
               </p>
             )}
             <form onSubmit={run}>

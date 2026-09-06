@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useStore, action, api, update } from "./store.js";
-import { validateFile, time } from "./domain.js";
+import { validateFile, time, label } from "./domain.js";
 import { Workspace } from "./workspace.jsx";
 import "./style.css";
 
@@ -145,7 +145,7 @@ function Landing({ projects, loading }) {
                   <span>{time(p.seconds)}</span>
                 </div>
                 <p>
-                  {p.status} ·{" "}
+                  {label(p.status)} ·{" "}
                   {p.has_original_audio
                     ? "Original audio present"
                     : "No original audio"}

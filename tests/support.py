@@ -1,4 +1,5 @@
 """Deterministic media generated in temporary storage; no private lab fixtures."""
+
 import atexit
 import os
 import tempfile
@@ -29,18 +30,39 @@ def load_case(name="shoes"):
         t = np.arange(n) / rate
         pulse = level * np.exp(-t * 45) * np.cos(2 * np.pi * 230 * t)
         offset = round(time * rate)
-        source[offset:offset+n] += pulse
+        source[offset : offset + n] += pulse
     original = np.zeros(count)
     for time in np.arange(0.8, seconds - 0.5, 0.7):
         start = round(time * rate)
-        part = source[round(.25 * rate):round(.45 * rate)]
-        original[start:start+len(part)] += part
+        part = source[round(0.25 * rate) : round(0.45 * rate)]
+        original[start : start + len(part)] += part
     for filename, audio in [("sfx.wav", source), ("original.wav", original)]:
         with wave.open(str(folder / filename), "wb") as stream:
             stream.setparams((1, 2, rate, len(audio), "NONE", "not compressed"))
             stream.writeframes(np.round(audio * 32767).astype("<i2").tobytes())
-    ff("-f", "lavfi", "-i", "testsrc2=s=96x64:r=30", "-i", folder / "original.wav",
-       "-t", seconds, "-c:v", "libx264", "-c:a", "aac", folder / "video.mp4")
-    return {"id": "a" * 16, "seconds": seconds, "context": "Synthetic fixture", "style": "",
-            "has_original_audio": True, "input_warnings": [],
-            "video_path": folder / "video.mp4", "original_path": folder / "original.wav", "sfx_path": folder / "sfx.wav"}
+    ff(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=s=96x64:r=30",
+        "-i",
+        folder / "original.wav",
+        "-t",
+        seconds,
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
+        folder / "video.mp4",
+    )
+    return {
+        "id": "a" * 16,
+        "seconds": seconds,
+        "context": "Synthetic fixture",
+        "style": "",
+        "has_original_audio": True,
+        "input_warnings": [],
+        "video_path": folder / "video.mp4",
+        "original_path": folder / "original.wav",
+        "sfx_path": folder / "sfx.wav",
+    }

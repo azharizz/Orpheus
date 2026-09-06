@@ -1,6 +1,7 @@
 """Local Grafana evidence plane. No raw prompts/media or credentials are exported."""
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import math
@@ -8,7 +9,7 @@ import os
 import re
 import sqlite3
 import time
-import fcntl
+
 import httpx
 import numpy as np
 
@@ -497,6 +498,12 @@ async def investigate(project_id, topic="history", candidate_id=""):
                     name = (
                         "query_prometheus" if topic == "runtime" else "query_loki_logs"
                     )
+                    if name not in available:
+                        return {
+                            "status": "failed",
+                            "error": "MCP tool unavailable",
+                            "tool": name,
+                        }
                     arguments = (
                         {
                             "datasourceUid": "orpheus-prometheus",

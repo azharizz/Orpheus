@@ -1,11 +1,18 @@
-from google.adk.tools import ToolContext
-from . import arrangement
 import hashlib
 import json
-from . import observability as obs
-from . import takes
+
+from google.adk.tools import ToolContext
 from google.genai import types
-from .workflow_common import COMPLETION_WARNING_CALL, INSPECTION_STOP_CALL, MAX_CONTROLLER_CALLS, frame_parts, runtime_prompt
+
+from . import arrangement, takes
+from . import observability as obs
+from .config import MAX_CONTROLLER_CALLS
+from .workflow_common import (
+    COMPLETION_WARNING_CALL,
+    INSPECTION_STOP_CALL,
+    frame_parts,
+    runtime_prompt,
+)
 
 
 class StateTools:
@@ -148,7 +155,7 @@ class StateTools:
             temporal_ready = bool(
                 isinstance(contact, (int, float))
                 and (not isinstance(contact, bool))
-                and any((abs(contact - t) <= 0.2 for t in delivered))
+                and any(abs(contact - t) <= 0.2 for t in delivered)
             )
             nearby_reviews = [
                 review
@@ -245,7 +252,7 @@ class StateTools:
                 continue
             issues = []
             if row.get("anchor") != "contact" or not all(
-                (key in row for key in ("target_anchor_s", "source_anchor_s"))
+                key in row for key in ("target_anchor_s", "source_anchor_s")
             ):
                 issues.append("explicit contact/source anchors")
             fit = state.get("impact_fit_receipts", {}).get(row.get("id"))
@@ -265,7 +272,7 @@ class StateTools:
                 if isinstance(t, (int, float)) and (not isinstance(t, bool))
             ]
             if contact is not None and (
-                not any((abs(contact - t) <= 0.2 for t in delivered))
+                not any(abs(contact - t) <= 0.2 for t in delivered)
             ):
                 issues.append("delivered temporal review near contact")
             reviews = [
@@ -401,7 +408,7 @@ class StateTools:
             i
             for i, c in enumerate(llm_request.contents)
             if c.role == "user"
-            and any(((p.text or "").startswith("User request:") for p in c.parts or []))
+            and any((p.text or "").startswith("User request:") for p in c.parts or [])
         ]
         if starts:
             llm_request.contents = llm_request.contents[starts[-1] :]
@@ -535,7 +542,7 @@ class StateTools:
                 dict.fromkeys([*s.get("delivered_centers", []), *s.get("reviewed", [])])
             )
             for receipt in self.pending_receipts:
-                delivered.extend((frame["time_s"] for frame in receipt["frames"]))
+                delivered.extend(frame["time_s"] for frame in receipt["frames"])
             s["delivered_centers"] = list(dict.fromkeys(delivered))
             s["delivered_frame_receipts"] = [
                 *s.get("delivered_frame_receipts", []),

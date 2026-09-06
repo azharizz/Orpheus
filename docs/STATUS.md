@@ -1,28 +1,27 @@
-# Current implementation checkpoint
+# Orpheus delivery status
 
-2026-09-06. Goal remains active; this is not a production-readiness certificate.
+Updated 2026-09-06. This is a local, single-user production-quality baseline. It is not a perceptual sound-quality certificate.
 
 ## Verified
 
-- Extracted package backend: 65 unittest checks passed, one live MCP test skipped (opt-in).
-- HTTP: three tests passed covering generated-media preparation, no paid call on import, origin/host checks, retired routes, ranged playback, poster/waveform, saved take retrieval and explicit run dispatch.
-- Frontend: Vite production build passed; five Node state/transport tests passed before the latest recording-level UI addition.
-- Source modules currently below 800 lines; legacy application HTTP inheritance removed.
+- Clean package exposes the complete v2 workflow tool inventory: 28 tools, with no v1 or legacy HTTP routes.
+- Backend suite: 70 tests pass, one opt-in live MCP test is skipped by default.
+- Live MCP proof: a real ADK run queried the official Loki/Prometheus MCP service and wrote a linked take experiment receipt.
+- Isolated Grafana stack: setup is idempotent, credentials remain in runtime storage, the collector is scraped by Prometheus, and the lab containers remain separate.
+- Authorized paid parity run: one turn, capped at 40 controller calls. OpenRouter served two controller models through explicit failover; the run completed with two measured candidates and `review_required`. No approval was invented.
+- HTTP coverage includes media preparation, origin checks, retired routes, range requests, waveforms, takes, explicit run dispatch, exact review identity, assisted revision lineage, and stale-audio rejection.
+- Frontend: 13 Node lifecycle/transport/domain checks pass and the Vite production build passes.
+- Browser QA covered landing/workspace at desktop and mobile widths, picture playback, independent-source playback, source/picture exclusivity, candidate switching, evidence rail, review disclosures, and the explicit paid-run consent gate.
+- Impeccable detector returned no findings for `frontend/src` after the bounded visual pass. Self-hosted Barlow Condensed and Source Sans 3 assets are licensed and bundled.
+- No `useEffect`, imperative DOM queries, parent-path imports, or source file over 800 lines in application code.
 
-## Outstanding acceptance
+## Known limits
 
-- Full feature parity audit, HTTP assisted edit/review tests, actual local Grafana setup and fresh MCP evidence.
-- Browser desktop/mobile functional and visual validation; final Impeccable detector and all 66 catalog checks.
-- Complete transport/recording lifecycle tests; source audition exclusivity, candidate switch readiness and level-match behavior.
-- Self-host approved fonts; readable frontend formatting; dead code and package/dependency review.
-- Document final limitations honestly; no claim that synthetic tests demonstrate autonomous sound quality.
+- The paid parity run is evidence of wiring and real-provider behavior only. Its own receipt keeps the result provisional: source character mismatch, timing/listening uncertainty, unresolved acoustic hypotheses, and whole-soundtrack replacement are disclosed for human review.
+- Browser capture still depends on the user's microphone permission and hardware. Automated tests cover cancellation, final chunk delivery, cleanup, mute restoration, and upload boundaries without granting that permission.
+- Grafana remains a separate operational UI. The application links to it and queries the official MCP service; it does not imitate Grafana's theme.
+- Cloud deployment, authentication, multi-user storage, and GCP integration remain outside this local scope.
 
-## Working tree
+## Layout
 
-`orpheus/` Python package; `frontend/` declarative React application; `observability/` copied service assets; `tests/` standalone synthetic checks. Original lab and sessions are not migrated.
-
-Latest work completed missing `takes.jsx`, `evidence.jsx`, and `style.css`, exposed `AUDIO_ENABLED` to the config endpoint, and added `tests/test_http.py`. Native buttons have text-action styling to satisfy low-chrome preference while preserving accessibility.
-
-Checkpoint confirmation: final frontend rebuild and five Node checks passed after formatting and extracting `review.jsx`. Both `/` and `/workspace` loaded through the browser. No effect hooks, imperative DOM queries/templates, parent sys.path changes or frozen-server imports found in the new source scan. Frontend files now use readable formatting (largest 545 lines). Runtime server launched via exec session 70308 at port 8766; revalidate handle before restarting. Browser tab 1 is the import screen.
-
-Next verification should create only disposable synthetic media in a separate ORPHEUS_DATA_DIR, exercise the workspace end-to-end, then check real Grafana with isolated service identity. No public/private media transfer is implied by the synthetic tests.
+`orpheus/` contains the standalone Python workflow and HTTP service. `frontend/` contains the two-route React application. `observability/` contains the isolated Grafana/Loki/Tempo/Prometheus assets. `tests/` uses generated temporary media and never depends on the reference lab at runtime.

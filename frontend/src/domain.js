@@ -18,6 +18,15 @@ export const time = (n) =>
   `${Math.floor((Number(n) || 0) / 60)
     .toString()
     .padStart(2, "0")}:${((Number(n) || 0) % 60).toFixed(3).padStart(6, "0")}`;
+export function label(value) {
+  const known = {
+    review_required: "Review required",
+    whole_soundtrack_replacement: "Whole soundtrack replacement",
+    mono_analysis_copy: "Mono analysis copy",
+    source_near_full_scale_samples: "Source near full scale",
+  };
+  return known[value] || String(value).replaceAll("_", " ");
+}
 export function matchVolume(level, levels) {
   const finite = levels.filter(Number.isFinite);
   return Number.isFinite(level) && finite.length
