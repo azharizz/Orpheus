@@ -40,7 +40,8 @@
 }
 body {
   margin: 0;
-  background: #090a0b url("../assets/landing-grain.webp") center top / 720px auto repeat;
+  background: #090a0b url("../assets/landing-grain.webp") center top / 720px
+    auto repeat;
 }
 ::selection {
   background: var(--accent);
@@ -253,6 +254,33 @@ dt,
   color: var(--accent);
   font: 600 clamp(20px, 2.4vw, 34px)/0.95 var(--font-display);
   letter-spacing: 0.05em;
+}
+.hero-visual {
+  position: absolute;
+  right: 7%;
+  top: 14%;
+  width: min(38vw, 520px);
+  height: 70%;
+  z-index: 0;
+}
+.hero-visual img {
+  position: absolute;
+  width: 52%;
+  height: 70%;
+  object-fit: cover;
+  border: 1px solid #3a3029;
+  filter: saturate(0.78) contrast(1.1);
+  box-shadow: 12px 12px 0 #111417;
+}
+.hero-visual img:first-child {
+  right: 0;
+  top: 0;
+  transform: rotate(3deg);
+}
+.hero-visual img:last-child {
+  left: 0;
+  bottom: 0;
+  transform: rotate(-4deg);
 }
 .hero-copy {
   width: min(310px, 100%);

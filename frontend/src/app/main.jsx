@@ -121,6 +121,10 @@ function Landing({ projects, loading }) {
               THAT BELONGS.
             </p>
           </div>
+          <div className="hero-visual" aria-hidden="true">
+            <img src="/src/assets/hero-step.webp" />
+            <img src="/src/assets/hero-reel.webp" />
+          </div>
           <div className="hero-copy">
             <p>
               Shape the sound that makes a frame feel real. Bring a scene, find
