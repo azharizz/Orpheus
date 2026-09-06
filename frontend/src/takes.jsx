@@ -1,4 +1,5 @@
-import React, { useCallback, useState, useRef } from "react";
+import { registerMedia, claimMedia } from "./audio-focus.js";
+import React, { useCallback, useState } from "react";
 import { action, loadTakes, media, post, api, update } from "./store.js";
 import {
   useRecording,
@@ -11,7 +12,6 @@ import { time, matchVolume } from "./domain.js";
 
 export function Recorder({ p, state, transport }) {
   const recording = useRecording();
-  const players = useRef(new Set());
   const [matched, setMatched] = useState(false);
   const [brief, setBrief] = useState("");
   const [start, setStart] = useState(0);
@@ -23,6 +23,7 @@ export function Recorder({ p, state, transport }) {
   const metadata = { projectId: p.id, brief, start: Number(start) };
   const report = (error) => update({ error: error.message });
   async function capture() {
+    claimMedia();
     transport.pause();
     try {
       await startRecording(
@@ -104,9 +105,11 @@ export function Recorder({ p, state, transport }) {
       <p role="status">
         {recording.active
           ? `Recording · ${time(recording.elapsed)} · Microphone active`
-          : recording.pending
-            ? "Waiting for microphone permission…"
-            : "Microphone inactive"}
+          : recording.stopping
+            ? "Finishing captured audio…"
+            : recording.pending
+              ? "Waiting for microphone permission…"
+              : "Microphone inactive"}
       </p>
       {recording.error && (
         <p role="alert" className="error">
@@ -145,7 +148,8 @@ export function Recorder({ p, state, transport }) {
           <audio
             controls
             src={recording.draft.url}
-            onPlay={() => transport.pause()}
+            ref={registerMedia}
+            onPlay={(e) => claimMedia(e.currentTarget)}
           />
           <div className="actions">
             <button
@@ -182,29 +186,16 @@ export function Recorder({ p, state, transport }) {
               {time(t.profile.duration_s)} · Picture cue{" "}
               {time(t.picture_start_s)} · {t.clock}
             </p>
-            <audio
-              controls
-              preload="none"
-              ref={(node) => {
-                if (!node) return;
-                players.current.add(node);
-                node.volume = matched
+            <TakePlayer
+              src={media(p.id, `takes/${t.id}.wav`)}
+              volume={
+                matched
                   ? matchVolume(
                       t.profile.body_dbfs,
                       saved.takes.map((take) => take.profile.body_dbfs),
                     )
-                  : 1;
-                return () => {
-                  node.pause();
-                  players.current.delete(node);
-                };
-              }}
-              src={media(p.id, `takes/${t.id}.wav`)}
-              onPlay={(e) => {
-                transport.pause();
-                for (const audio of players.current)
-                  if (audio !== e.currentTarget) audio.pause();
-              }}
+                  : 1
+              }
             />
             <p className="muted">
               Body {t.profile.body_dbfs} dBFS · Peak{" "}
@@ -236,5 +227,25 @@ export function Recorder({ p, state, transport }) {
         <pre>{JSON.stringify(saved?.experiments || [], null, 2)}</pre>
       </details>
     </section>
+  );
+}
+
+function TakePlayer({ src, volume }) {
+  const bind = useCallback(
+    (node) => {
+      if (!node) return;
+      node.volume = volume;
+      return registerMedia(node);
+    },
+    [volume],
+  );
+  return (
+    <audio
+      controls
+      preload="none"
+      ref={bind}
+      src={src}
+      onPlay={(event) => claimMedia(event.currentTarget)}
+    />
   );
 }

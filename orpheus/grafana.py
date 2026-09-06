@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import httpx
 from . import observability as obs
 
-from .config import OBSERVABILITY_ASSETS
+from .config import OBSERVABILITY_ASSETS, GRAFANA_PORTS
 
 def compose(*args):
     subprocess.run(['docker','compose','--env-file',str(obs.STORE/'.env'),'-f',str(OBSERVABILITY_ASSETS/'compose.yaml'),*args],check=True)
@@ -22,8 +22,12 @@ def setup():
     else:values={'GRAFANA_ADMIN_PASSWORD':secrets.token_urlsafe(30),'MCP_CALLER_TOKEN':secrets.token_urlsafe(30)}
     def save():
         envpath.write_text('\n'.join(k+'='+v for k,v in values.items())+'\n');envpath.chmod(0o600)
-    save();dashboard();compose('up','-d','grafana','loki','tempo','prometheus')
-    with httpx.Client(base_url='http://127.0.0.1:3000',auth=('admin',values['GRAFANA_ADMIN_PASSWORD']),timeout=10,trust_env=False) as client:
+    values.update({"ORPHEUS_" + name + "_PORT": str(port) for name, port in GRAFANA_PORTS.items()})
+    values["ORPHEUS_OBSERVABILITY_DIR"] = str(obs.STORE.resolve())
+    template = (OBSERVABILITY_ASSETS / "prometheus.yaml").read_text()
+    (obs.STORE / "prometheus.yaml").write_text(template.replace("__METRICS_PORT__", str(GRAFANA_PORTS["METRICS"])))
+    save();compose('up','-d','grafana','loki','tempo','prometheus')
+    with httpx.Client(base_url=f'http://127.0.0.1:{GRAFANA_PORTS["GRAFANA"]}',auth=('admin',values['GRAFANA_ADMIN_PASSWORD']),timeout=10,trust_env=False) as client:
         for attempt in range(45):
             try:
                 if client.get('/api/health').status_code==200:break
@@ -34,10 +38,11 @@ def setup():
             ident=response.json()['id']
             response=client.post(f'/api/serviceaccounts/{ident}/tokens',json={'name':'local-runtime'});response.raise_for_status()
             values['GRAFANA_MCP_TOKEN']=response.json()['key'];save()
-    obs.CONFIG.write_text(json.dumps({'loki_url':'http://127.0.0.1:3100','tempo_url':'http://127.0.0.1:14318',
-        'mcp_url':'http://127.0.0.1:18000/mcp','mcp_token':values['MCP_CALLER_TOKEN']}));obs.CONFIG.chmod(0o600)
+    obs.CONFIG.write_text(json.dumps({'loki_url':f'http://127.0.0.1:{GRAFANA_PORTS["LOKI"]}','tempo_url':f'http://127.0.0.1:{GRAFANA_PORTS["OTLP"]}',
+        'dashboard_url':f'http://127.0.0.1:{GRAFANA_PORTS["GRAFANA"]}/d/orpheus/foley-evidence',
+        'mcp_url':f'http://127.0.0.1:{GRAFANA_PORTS["MCP"]}/mcp','mcp_token':values['MCP_CALLER_TOKEN']}));obs.CONFIG.chmod(0o600)
     compose('up','-d','mcp')
-    print('Grafana: http://127.0.0.1:3000/d/orpheus/foley-evidence (local Viewer, no login needed). Admin credentials stored privately; never browser-exported.')
+    print(f'Grafana: http://127.0.0.1:{GRAFANA_PORTS["GRAFANA"]}/d/orpheus/foley-evidence · credentials stored privately.')
 
 def dashboard():
     panels=[]
@@ -72,7 +77,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 def collect():
     # Docker Desktop reaches the host bridge; only aggregate, redacted metrics on this port.
-    server=ThreadingHTTPServer(('127.0.0.1',9464),MetricsHandler)
+    server=ThreadingHTTPServer(('127.0.0.1',GRAFANA_PORTS['METRICS']),MetricsHandler)
     threading.Thread(target=server.serve_forever,daemon=True).start()
     while True:
         try:obs.flush()

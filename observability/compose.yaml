@@ -1,8 +1,8 @@
-name: orpheus-observability
+name: orpheus-local
 services:
   grafana:
     image: grafana/grafana:12.1.1
-    ports: ["127.0.0.1:3000:3000"]
+    ports: ["127.0.0.1:${ORPHEUS_GRAFANA_PORT}:3000"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run setup first}
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -18,29 +18,29 @@ services:
   loki:
     image: grafana/loki:3.5.3
     command: ["-config.file=/etc/loki/local.yaml"]
-    ports: ["127.0.0.1:3100:3100"]
+    ports: ["127.0.0.1:${ORPHEUS_LOKI_PORT}:3100"]
     volumes: ["./loki.yaml:/etc/loki/local.yaml:ro", "loki:/loki"]
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=14d"]
-    volumes: ["./prometheus.yaml:/etc/prometheus/prometheus.yml:ro", "./rules.yaml:/etc/prometheus/rules.yaml:ro", "prometheus:/prometheus"]
-    ports: ["127.0.0.1:9090:9090"]
+    volumes: ["${ORPHEUS_OBSERVABILITY_DIR}/prometheus.yaml:/etc/prometheus/prometheus.yml:ro", "./rules.yaml:/etc/prometheus/rules.yaml:ro", "prometheus:/prometheus"]
+    ports: ["127.0.0.1:${ORPHEUS_PROMETHEUS_PORT}:9090"]
     restart: unless-stopped
   tempo:
     image: grafana/tempo:2.8.2
     command: ["-config.file=/etc/tempo.yaml"]
     volumes: ["./tempo.yaml:/etc/tempo.yaml:ro", "tempo:/var/tempo"]
-    ports: ["127.0.0.1:3200:3200", "127.0.0.1:14318:4318"]
+    ports: ["127.0.0.1:${ORPHEUS_TEMPO_PORT}:3200", "127.0.0.1:${ORPHEUS_OTLP_PORT}:4318"]
     restart: unless-stopped
   mcp:
     image: grafana/mcp-grafana@sha256:5114852743e450fe5186b6c1712419843eb4bd295e47e64c452c3aa0fab3c42e
-    command: ["-t", "streamable-http", "-address", ":8000", "--allowed-hosts", "127.0.0.1:18000,localhost:18000", "--disable-write", "--enabled-tools", "datasource,prometheus,loki,tempo,dashboard,navigation,alerting"]
+    command: ["-t", "streamable-http", "-address", ":8000", "--allowed-hosts", "127.0.0.1:${ORPHEUS_MCP_PORT},localhost:${ORPHEUS_MCP_PORT}", "--disable-write", "--enabled-tools", "datasource,prometheus,loki,tempo,dashboard,navigation,alerting"]
     environment:
       GRAFANA_URL: http://grafana:3000
       GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:-not-provisioned}
       MCP_GRAFANA_SERVER_TOKEN: ${MCP_CALLER_TOKEN:?Run setup first}
-    ports: ["127.0.0.1:18000:8000"]
+    ports: ["127.0.0.1:${ORPHEUS_MCP_PORT}:8000"]
     restart: unless-stopped
 volumes:
   grafana:

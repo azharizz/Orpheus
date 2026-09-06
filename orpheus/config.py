@@ -41,3 +41,17 @@ MAX_BRIEF_CHARS = 240
 MAX_FEEDBACK_CHARS = 500
 
 AUDIO_ENABLED = str(VALUES.get("ORPHEUS_AUDIO_ENABLED", "1")).lower() in ("1", "true", "yes")
+
+# Separate loopback ports keep the reference lab and clean application independent.
+GRAFANA_PORTS = {
+    "GRAFANA": 13000,
+    "LOKI": 13100,
+    "PROMETHEUS": 19090,
+    "TEMPO": 13200,
+    "OTLP": 14319,
+    "MCP": 18001,
+    "METRICS": 19464,
+}
+GRAFANA_PORTS = {name: int(VALUES.get("ORPHEUS_" + name + "_PORT", value)) for name, value in GRAFANA_PORTS.items()}
+if any(not 1024 <= port <= 65535 for port in GRAFANA_PORTS.values()) or len(set(GRAFANA_PORTS.values())) != len(GRAFANA_PORTS):
+    raise ValueError("Orpheus observability ports must be distinct values from 1024 to 65535")

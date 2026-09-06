@@ -95,6 +95,7 @@ class EvidenceChecks(unittest.TestCase):
                 await runner.close()
                 await service.close()
             asyncio.run(run())
+            (projects.ROOT / 'diagnostics').mkdir(parents=True, exist_ok=True)
             projects.atomic(projects.ROOT / 'diagnostics/LOCAL_GRAFANA_ADK_VERIFICATION.json', {'controller': 'scripted; no paid inference or quality claim', 'real_adk': True, 'real_official_mcp': True, 'separate_fitting_project': True, 'original_preserved': True, 'tool_results': results})
 if __name__ == '__main__':
     unittest.main()

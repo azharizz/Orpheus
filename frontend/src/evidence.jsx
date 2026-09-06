@@ -1,3 +1,4 @@
+import { registerMedia, claimMedia } from "./audio-focus.js";
 import React, { useState } from "react";
 import { action, post, media } from "./store.js";
 import { time } from "./domain.js";
@@ -41,6 +42,8 @@ export function Evidence({ p, c, row, state }) {
             </dl>
             {row.disposition === "use" && (
               <audio
+                ref={registerMedia}
+                onPlay={(event) => claimMedia(event.currentTarget)}
                 key={row.id + JSON.stringify(row.source_range_s)}
                 controls
                 preload="none"

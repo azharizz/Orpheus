@@ -206,6 +206,11 @@ function App() {
           <button onClick={() => update({ error: "" })}>Dismiss</button>
         </div>
       )}
+      {state.errors?.map((item) => (
+        <p className="error" role="alert" key={item.project_id}>
+          Project {item.project_id}: {item.error}
+        </p>
+      ))}
       {!isWorkspace ? (
         <Landing {...state} />
       ) : (

@@ -5,6 +5,7 @@ const Json = ({ value }) => <pre>{JSON.stringify(value, null, 2)}</pre>;
 export function Review({ p, c, rows, selected, locked, onCandidate }) {
   const [note, setNote] = useState("");
   const [draft, setDraft] = useState(null);
+  const [jsonDraft, setJsonDraft] = useState(null);
   const row = (draft || rows)[selected];
   const verdict = async (value) =>
     action(
@@ -68,6 +69,7 @@ export function Review({ p, c, rows, selected, locked, onCandidate }) {
             <div className="numeric-grid">
               {[
                 ["target_anchor_s", "Target anchor (s)"],
+                ["source_anchor_s", "Source anchor (s)"],
                 ["target_range_s.0", "Target start (s)"],
                 ["target_range_s.1", "Target end (s)"],
                 ["source_range_s.0", "Source start (s)"],
@@ -91,27 +93,56 @@ export function Review({ p, c, rows, selected, locked, onCandidate }) {
                   </label>
                 ))}
             </div>
+            <details>
+              <summary>Edit complete mapping</summary>
+              <p>
+                Adjust dispositions, fades, repetition and evidence references.
+                All edits are validated before rendering.
+              </p>
+              <label>
+                Arrangement rows (JSON)
+                <textarea
+                  rows={14}
+                  spellCheck={false}
+                  value={jsonDraft ?? JSON.stringify(draft || rows, null, 2)}
+                  onChange={(event) => setJsonDraft(event.target.value)}
+                />
+              </label>
+              {jsonDraft !== null && (
+                <p>
+                  Complete mapping edits take precedence over numeric fields.
+                </p>
+              )}
+            </details>
             <button
-              disabled={locked || !draft}
+              disabled={locked || (!draft && jsonDraft === null)}
               onClick={async () => {
                 const result = await action(
                   () =>
                     post("/api/assist", {
                       project_id: p.id,
                       candidate_id: c.id,
-                      rows: draft,
+                      rows: jsonDraft === null ? draft : JSON.parse(jsonDraft),
                     }),
                   "Assisted revision rendered. New human review required.",
                 );
                 if (result) {
                   setDraft(null);
+                  setJsonDraft(null);
                   onCandidate(result.id);
                 }
               }}
             >
               Render assisted revision
             </button>
-            <button onClick={() => setDraft(null)}>Reset edits</button>
+            <button
+              onClick={() => {
+                setDraft(null);
+                setJsonDraft(null);
+              }}
+            >
+              Reset edits
+            </button>
           </>
         ) : (
           <p>This candidate has no editable arrangement.</p>

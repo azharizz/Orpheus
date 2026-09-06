@@ -1,38 +1,40 @@
+import { registerMedia, claimMedia } from "./audio-focus.js";
 // Native media lifecycle is confined here; React owns the rendered controls.
 export class Transport {
   video = null;
   audio = null;
   resume = false;
   track = "original";
-  recording = false;
-  bindVideo = (node) => {
-    this.video = node;
-    return () => {
-      node.pause();
-      this.video = null;
-    };
-  };
+  operation = 0;
   bindAudio = (node) => {
+    if (!node) return;
     this.audio = node;
+    const release = registerMedia(node);
     return () => {
-      node.pause();
+      release();
       this.audio = null;
     };
   };
   async play() {
     if (!this.video) return;
+    const operation = ++this.operation;
+    claimMedia(this.video, this.audio);
     try {
       if (this.track !== "original" && this.audio) {
         this.audio.currentTime = this.video.currentTime;
         await this.audio.play();
+        if (operation !== this.operation) return;
       }
       await this.video.play();
     } catch (error) {
+      if (operation !== this.operation) return;
       this.pause();
       throw error;
     }
   }
   pause() {
+    this.operation++;
+    this.resume = false;
     this.video?.pause();
     this.audio?.pause();
   }
@@ -41,8 +43,10 @@ export class Transport {
     if (this.audio && this.track !== "original") this.audio.currentTime = value;
   }
   switchTrack(track) {
-    this.resume = !!this.video && !this.video.paused;
+    if (track === this.track) return;
+    const resume = this.resume || (!!this.video && !this.video.paused);
     this.pause();
+    this.resume = resume;
     this.track = track;
     if (this.video) this.video.muted = track !== "original";
     if (track === "original" && this.resume) {

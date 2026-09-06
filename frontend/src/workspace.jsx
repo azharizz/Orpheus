@@ -1,3 +1,4 @@
+import { registerMedia, claimMedia } from "./audio-focus.js";
 import React, { useState, useCallback } from "react";
 import { post, action, media, loadWave, update } from "./store.js";
 import { candidates, time } from "./domain.js";
@@ -90,7 +91,7 @@ export function Workspace({ project: p, state }) {
     [consent, setConsent] = useState(false);
   const [transport] = useState(() => new Transport());
   const recording = useRecording();
-  const rows = c?.arrangement?.rows || last?.arrangement?.rows || [];
+  const rows = c ? c.arrangement?.rows || [] : last?.arrangement?.rows || [];
   const selectedRow = rows[selected];
   const b =
     all.find((item) => item.id === bId) ||
@@ -98,6 +99,8 @@ export function Workspace({ project: p, state }) {
   const audible = track === "a" ? c : track === "b" ? b : null;
   const fail = (error) => update({ error: error.message });
   function switchTrack(next) {
+    if (next === "a" && c) setChosen(c.id);
+    if (next === "b" && b) setBId(b.id);
     transport.switchTrack(next)?.catch(fail);
     setTrack(next);
   }
@@ -112,7 +115,9 @@ export function Workspace({ project: p, state }) {
     (node) => {
       if (!node) return;
       transport.video = node;
+      const release = registerMedia(node);
       return () => {
+        release();
         stopRecording();
         transport.pause();
         transport.video = null;
@@ -160,6 +165,9 @@ export function Workspace({ project: p, state }) {
           </p>
         </div>
         <div className="mode-switch" aria-label="Workspace view">
+          <a href="#run-fitting">
+            {state.running ? "Inspect active turn" : "Run fitting"}
+          </a>
           {["Fit", "Record", "Review"].map((name) => (
             <button
               key={name}
@@ -235,7 +243,7 @@ export function Workspace({ project: p, state }) {
                 min="0"
                 max={p.seconds}
                 step="0.01"
-                disabled={recording.active}
+                disabled={recording.active || recording.pending}
                 onChange={(e) => {
                   const n = Number(e.target.value);
                   if (Number.isFinite(n) && n >= 0 && n <= p.seconds) {
@@ -306,7 +314,7 @@ export function Workspace({ project: p, state }) {
               Candidate A
               <select
                 value={c?.id || ""}
-                disabled={!all.length || recording.active}
+                disabled={!all.length || recording.active || recording.pending}
                 onChange={(e) => chooseCandidate(e.target.value)}
               >
                 {!all.length && <option>No render yet</option>}
@@ -326,7 +334,7 @@ export function Workspace({ project: p, state }) {
                 Candidate B
                 <select
                   value={b?.id || ""}
-                  disabled={recording.active}
+                  disabled={recording.active || recording.pending}
                   onChange={(e) => {
                     switchTrack("original");
                     setBId(e.target.value);
@@ -341,6 +349,23 @@ export function Workspace({ project: p, state }) {
               </label>
             )}
           </div>
+          <details>
+            <summary>Independent source · its own time ruler</summary>
+            <audio
+              controls
+              preload="metadata"
+              aria-label="Full independent source recording"
+              ref={registerMedia}
+              src={media(p.id, "sfx.wav")}
+              onPlay={(event) => claimMedia(event.currentTarget)}
+            />
+            <Wave
+              pid={p.id}
+              role="sfx"
+              state={state}
+              label="Source recording"
+            />
+          </details>
           {mode === "Record" ? (
             <Recorder p={p} state={state} transport={transport} />
           ) : (
@@ -379,10 +404,41 @@ export function Workspace({ project: p, state }) {
                     </li>
                   ))}
                 </ol>
+              ) : c?.plan?.length ? (
+                <section aria-label="Discrete event plan">
+                  <p>
+                    Discrete fitting plan · source-bank placements. No mapped
+                    arrangement is attached to this candidate.
+                  </p>
+                  <ol className="event-list">
+                    {c.plan.map((event, index) => (
+                      <li key={index}>
+                        <button
+                          onClick={() => {
+                            transport.pause();
+                            transport.seek(event.time_s);
+                            setPosition(event.time_s);
+                          }}
+                        >
+                          <span className="time">{time(event.time_s)}</span>
+                          <span>
+                            {event.sample_id}
+                            <small>
+                              {event.duration_s} s · {event.gain_db} dB ·{" "}
+                              {event.confidence}
+                            </small>
+                            <small>{event.evidence}</small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
               ) : (
                 <p>
-                  No mapped actions yet. Prepare your brief and explicitly run
-                  fitting. Completed output will appear here.
+                  {c
+                    ? "This candidate has no discrete or mapped events. Inspect its full receipt for sustained sound coverage."
+                    : "No mapped actions yet. Prepare your brief and explicitly run fitting."}
                 </p>
               )}
               {c && (
@@ -398,7 +454,7 @@ export function Workspace({ project: p, state }) {
               )}
             </section>
           )}
-          <section className="run-section">
+          <section className="run-section" id="run-fitting">
             <h2>
               {last ? "Continue the experiment" : "Fit sound to this scene"}
             </h2>

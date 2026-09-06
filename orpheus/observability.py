@@ -580,7 +580,7 @@ def status():
     cfg = config()
     return {
         "enabled": bool(cfg),
-        "dashboard_url": "http://127.0.0.1:3000/d/orpheus/foley-evidence",
+        "dashboard_url": cfg.get("dashboard_url") if cfg else None,
         "pending_exports": pending() if cfg else None,
-        "mcp_url": "http://127.0.0.1:18000/mcp" if cfg else None,
+        "mcp_url": cfg.get("mcp_url") if cfg else None,
     }

@@ -12,6 +12,22 @@ const media = () => ({
     this.paused = false;
   },
 });
+test("pause cancels a pending audio start before picture playback", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.audio = media();
+  t.track = "a";
+  let resolve;
+  t.audio.play = () =>
+    new Promise((done) => {
+      resolve = done;
+    });
+  const pending = t.play();
+  t.pause();
+  resolve();
+  await pending;
+  assert.equal(t.video.paused, true);
+});
 test("track switch preserves shared time and only resumes when new audio is ready", async () => {
   const t = new Transport();
   t.video = media();
@@ -38,4 +54,16 @@ test("audio rejection pauses both paths", async () => {
   };
   await assert.rejects(() => t.play());
   assert.ok(t.video.paused && t.audio.paused);
+});
+
+test("reselecting the audible track leaves playback running; explicit pause cancels delayed resume", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.audio = media();
+  t.switchTrack("original");
+  assert.equal(t.video.paused, false);
+  t.switchTrack("a");
+  t.pause();
+  await t.ready();
+  assert.equal(t.video.paused, true);
 });

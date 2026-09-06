@@ -79,5 +79,38 @@ class HttpChecks(unittest.TestCase):
         response=self.client.post('/api/projects',files=[('video',('a.mp4',b'x')),('video',('b.mp4',b'x')),('sfx',('a.wav',b'x'))])
         self.assertEqual(response.status_code,400,response.text)
 
+    def test_review_identity_and_assisted_revision(self):
+        import json
+        from orpheus import arrangement
+        from tests.test_mapped_workflow import fixture
+        source = load_case()
+        doc = projects.create(source['video_path'], source['sfx_path'])
+        case = projects.load(doc['id'])
+        folder = projects.project_dir(case['id'])
+        evidence, row = fixture(case)
+        row.update(target_anchor_s=0.7, source_anchor_s=0.25)
+        bound = arrangement.bind([row], case, evidence, require_impact_anchors=True)
+        rendered = arrangement.render(case, bound, folder)
+        projects.atomic(folder / (rendered['id'] + '.json'), rendered)
+        payload = {'project_id': case['id'], 'candidate_id': rendered['id']}
+        response = self.client.post('/api/review', json={**payload, 'verdict': 'approve'})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()['audio_sha256'], rendered['audio_sha256'])
+        revised_rows = [{**bound['rows'][0], 'gain_db': -3}]
+        response = self.client.post('/api/assist', json={**payload, 'rows': revised_rows})
+        self.assertEqual(response.status_code, 201, response.text)
+        revised = response.json()
+        self.assertNotEqual(revised['id'], rendered['id'])
+        self.assertFalse(revised['arrangement']['human_approved'])
+        self.assertEqual(revised['arrangement']['parent_candidate_id'], rendered['id'])
+        self.assertEqual(json.loads((folder / (rendered['id'] + '.json')).read_text()), rendered)
+        revised_rows[0]['target_range_s'] = [0.5, 3]
+        self.assertEqual(self.client.post('/api/assist', json={**payload, 'rows': revised_rows}).status_code, 400)
+        with (folder / (rendered['id'] + '.wav')).open('ab') as stream:
+            stream.write(b'changed')
+        response = self.client.post('/api/review', json={**payload, 'verdict': 'reject'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('audio has changed', response.json()['error'])
+
 if __name__=='__main__':
     unittest.main()
