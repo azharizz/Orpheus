@@ -12,7 +12,7 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline. It
 - Agent fitting uses the same family take and accepted ranges, rejects layer samples outside those ranges, preserves explicit provider failover, and requires paid-run consent.
 - Grafana receives redacted family, match, take, candidate, review, and runtime evidence; take backfill reads the current family-scoped store.
 - Backend suite: 84 tests pass; one opt-in live MCP integration is skipped by default.
-- Frontend suite: 15 tests pass; the Vite production build passes.
+- Frontend suite: 16 tests pass; the Vite production build passes.
 - Annotated shoe benchmark: 90% recall, 75% precision, 0.865 F2, 0.052 ms median refined-onset error, 61,244-byte index.
 - Real shoe-media parity completed import, 79-window indexing, batch decisions, family take, selective render, picture preservation, zero-clipping measurement, and exact hash-bound review.
 - Browser QA with independently sourced Wikimedia picture, real gravel footsteps, and a separate replacement completed 114-window indexing, mixed batch review, re-ranking, family take audition, selective render, A/B switching, exact approval, picture preservation, and zero clipping. See `docs/REAL_MEDIA_UI_TEST.md`.
