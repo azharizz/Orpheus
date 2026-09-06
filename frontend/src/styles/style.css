@@ -395,6 +395,57 @@ footer {
 .import h1 {
   margin-bottom: 24px;
 }
+.import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.registration-frame {
+  --registration-color: var(--accent);
+  --registration-size: 16px;
+  display: inline-flex;
+  position: relative;
+  padding: 8px 14px;
+  background:
+    linear-gradient(var(--registration-color), var(--registration-color)) left top / var(--registration-size) 1px no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) left top / 1px var(--registration-size) no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) right top / var(--registration-size) 1px no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) right top / 1px var(--registration-size) no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) left bottom / var(--registration-size) 1px no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) left bottom / 1px var(--registration-size) no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) right bottom / var(--registration-size) 1px no-repeat,
+    linear-gradient(var(--registration-color), var(--registration-color)) right bottom / 1px var(--registration-size) no-repeat;
+  transition: --registration-size 180ms ease, --registration-color 180ms ease;
+}
+.registration-frame:hover,
+.registration-frame:focus-within {
+  --registration-color: var(--focus);
+  --registration-size: 21px;
+}
+.registration-frame:has(:disabled) {
+  --registration-color: var(--control-edge);
+}
+.registration-frame > button {
+  padding: 0;
+  min-height: 28px;
+  text-transform: uppercase;
+}
+.registration-frame-small {
+  --registration-size: 10px;
+  padding: 8px 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  font-size: 14px;
+}
+.registration-frame-small:hover,
+.registration-frame-small:focus-visible {
+  color: var(--focus);
+}
 .file-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;

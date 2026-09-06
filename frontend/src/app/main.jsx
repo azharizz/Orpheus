@@ -39,10 +39,6 @@ function Import({ config, busy }) {
           Fit an independent recording to picture, then listen, inspect and
           decide.
         </p>
-        <p>
-          Already have a project? Open it from{" "}
-          <a href="/?view=projects">your project library</a>.
-        </p>
       </div>
       <form onSubmit={submit}>
         <div className="file-pair">
@@ -97,9 +93,16 @@ function Import({ config, busy }) {
         ) : (
           <p>Loading active media limits…</p>
         )}
-        <button className="primary" disabled={busy || !config}>
-          {busy ? "Preparing media…" : "Prepare project"}
-        </button>
+        <div className="import-actions">
+          <span className="registration-frame">
+            <button className="primary" disabled={busy || !config}>
+              {busy ? "Preparing media…" : "Prepare project"}
+            </button>
+          </span>
+          <a className="registration-frame registration-frame-small" href="/?view=projects">
+            your project library
+          </a>
+        </div>
       </form>
     </section>
   );
