@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: Orpheus
+    folder: Orpheus
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

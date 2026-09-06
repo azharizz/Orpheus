@@ -1,0 +1,273 @@
+{
+  "uid": "orpheus",
+  "title": "Foley evidence",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "tags": [
+    "orpheus",
+    "local"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "project",
+        "type": "textbox",
+        "label": "Project ID regex",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Sound measurements \u00b7 candidates and input/takes",
+      "type": "logs",
+      "description": "Signal descriptors are not perceptual approval. floor_p10 includes intentional quiet; active_fraction is a fixed -50 dBFS threshold.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"candidate|sound_profile|take_recorded\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Impact, source landmark and coverage evidence",
+      "type": "logs",
+      "description": "Media timestamps are fields, not log timestamps. Peak errors are relative to agent anchors, not physical contact truth.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"sound_event|candidate_timing_measured\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Take experiments and human decisions",
+      "type": "logs",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"take_recorded|take_experiment|human_review|selection\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Provider and tool failures",
+      "type": "logs",
+      "description": "Failed inference is not evidence of absent sound. Read-only MCP can investigate; no automatic purchases or retry loops.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\".*failed|tool_result\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Agent, tool and MCP execution",
+      "type": "logs",
+      "description": "Trace IDs link into Tempo. No raw prompts, media or credentials exported.",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_response|audio_response|grafana_query|tool_call|session_saved\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Telemetry outbox backlog",
+      "type": "timeseries",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_export_pending",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Provider failures by status",
+      "type": "timeseries",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(code) (increase(orpheus_provider_failures_total[5m]))",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 8,
+      "title": "Reported token usage",
+      "type": "timeseries",
+      "description": "Only usage returned by providers; missing usage is not zero billed usage.",
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_reported_tokens_total",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Collector health",
+      "type": "timeseries",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "orpheus-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"orpheus\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+groups:
+  - name: orpheus-runtime
+    rules:
+      - alert: OrpheusTelemetryUnavailable
+        expr: up{job="orpheus"} == 0
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: "Orpheus collector is unavailable; do not interpret missing metrics as success."}
+      - alert: OrpheusProviderFailures
+        expr: increase(orpheus_provider_failures_total[5m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "Provider failure detected. Inspect logs before retrying or accepting a degraded render."}
+      - alert: OrpheusExportBacklog
+        expr: orpheus_export_pending > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "Telemetry pending export: Grafana may not yet contain the latest evidence."}

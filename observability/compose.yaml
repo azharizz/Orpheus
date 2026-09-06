@@ -1,0 +1,49 @@
+name: orpheus-observability
+services:
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run setup first}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+  loki:
+    image: grafana/loki:3.5.3
+    command: ["-config.file=/etc/loki/local.yaml"]
+    ports: ["127.0.0.1:3100:3100"]
+    volumes: ["./loki.yaml:/etc/loki/local.yaml:ro", "loki:/loki"]
+    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=14d"]
+    volumes: ["./prometheus.yaml:/etc/prometheus/prometheus.yml:ro", "./rules.yaml:/etc/prometheus/rules.yaml:ro", "prometheus:/prometheus"]
+    ports: ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+  tempo:
+    image: grafana/tempo:2.8.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes: ["./tempo.yaml:/etc/tempo.yaml:ro", "tempo:/var/tempo"]
+    ports: ["127.0.0.1:3200:3200", "127.0.0.1:14318:4318"]
+    restart: unless-stopped
+  mcp:
+    image: grafana/mcp-grafana@sha256:5114852743e450fe5186b6c1712419843eb4bd295e47e64c452c3aa0fab3c42e
+    command: ["-t", "streamable-http", "-address", ":8000", "--allowed-hosts", "127.0.0.1:18000,localhost:18000", "--disable-write", "--enabled-tools", "datasource,prometheus,loki,tempo,dashboard,navigation,alerting"]
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:-not-provisioned}
+      MCP_GRAFANA_SERVER_TOKEN: ${MCP_CALLER_TOKEN:?Run setup first}
+    ports: ["127.0.0.1:18000:8000"]
+    restart: unless-stopped
+volumes:
+  grafana:
+  loki:
+  prometheus:
+  tempo:
