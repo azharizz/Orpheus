@@ -7,3 +7,5 @@ Prompt: Generate a cinematic photographic asset for Orpheus, a foley sound workb
 `tv-static.webp` is an original deterministic FFmpeg noise texture (seed 42), compressed to WebP and repositioned with CSS. The transition reference is [Grey TV Static Noise by ArtSqb](https://pixabay.com/videos/tv-noise-damage-glitch-tv-noise-38899/). No third-party video is embedded or redistributed.
 
 The title cycles photographs every three seconds. Each cut has a 0.9-second static envelope; only the photographs drift vertically. The header pauses all title animations, and reduced-motion preferences show the first photograph without animation.
+
+`new-project-before.webp` and `new-project-after.webp` were generated with the built-in image generation tool on 2026-09-07, then compressed to WebP. They are an original sound-first pair for the New Project screen: raw location capture and a Foley-stage grass performance. They illustrate the app’s sound replacement workflow; neither represents picture editing.

@@ -5,10 +5,13 @@ import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
 import "../styles/preparation.css";
+import "../styles/new-project.css";
 import "../styles/families.css";
 import "../styles/workspace.css";
 import "../styles/movie.css";
 import { PhotographicTitle } from "./photographic-title.jsx";
+import newProjectBefore from "../assets/new-project-before.webp";
+import newProjectAfter from "../assets/new-project-after.webp";
 
 export function Disclosure({ title, children }) {
   return (
@@ -41,7 +44,18 @@ function Import({ config, busy }) {
   }
   return (
     <section className="import">
-      <div>
+      <aside className="sound-transition" aria-label="From source sound to a Foley replacement performance">
+        <figure>
+          <img src={newProjectBefore} alt="A location microphone recording footsteps through wet grass." />
+          <figcaption><span>Source sound</span><strong>Location take</strong></figcaption>
+        </figure>
+        <div className="sound-transition-mark" aria-hidden="true"><i /><span>→</span><i /></div>
+        <figure>
+          <img src={newProjectAfter} alt="A Foley performer recording a boot step in a tray of grass beside a studio microphone." />
+          <figcaption><span>Foley take</span><strong>Grass performance</strong></figcaption>
+        </figure>
+      </aside>
+      <div className="import-introduction">
         <h1>Bring the whole picture.</h1>
         <p>
           Mark one sound, find related moments across the film, then decide
