@@ -10,8 +10,8 @@ Updated 2026-09-07. This is a local, single-user production-quality baseline. It
 - Human-reviewed seeds, accepted ranges, rejected ranges, rescored queues, replacement-take ownership, and latest render state persist per sound family.
 - Selective renders duck and overlay only accepted windows, preserve PCM outside them, prevent clipping, warn on conservative dialogue/music overlap, and retain the untouched video stream in the master.
 - Agent fitting uses the same family take and accepted ranges, rejects layer samples outside those ranges, preserves explicit provider failover, and requires paid-run consent.
-- Grafana receives redacted family, match, take, candidate, review, and runtime evidence; take backfill reads the current family-scoped store.
-- Backend suite: 87 tests pass; one opt-in live MCP integration is skipped by default.
+- Grafana receives redacted family, match, take, candidate, review, and runtime evidence; the Agentic Foley Control Room shows outcome, baseline comparison, contact timing, loudness safety, picture coverage, agent/provider paths, experiments, runtime health, and collapsed raw evidence.
+- Backend suite: 89 tests pass; one opt-in live MCP integration is skipped by default.
 - Frontend suite: 16 tests pass; the Vite production build passes.
 - Annotated shoe benchmark: 90% recall, 75% precision, 0.865 F2, 0.052 ms median refined-onset error, 61,244-byte index.
 - Real shoe-media parity completed import, 79-window indexing, batch decisions, family take, selective render, picture preservation, zero-clipping measurement, and exact hash-bound review.

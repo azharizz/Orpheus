@@ -102,7 +102,7 @@ def setup():
             {
                 "loki_url": f"http://127.0.0.1:{GRAFANA_PORTS['LOKI']}",
                 "tempo_url": f"http://127.0.0.1:{GRAFANA_PORTS['OTLP']}",
-                "dashboard_url": f"http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}/d/orpheus/foley-evidence",
+                "dashboard_url": f"http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}/d/orpheus/agentic-foley-control-room",
                 "mcp_url": f"http://127.0.0.1:{GRAFANA_PORTS['MCP']}/mcp",
                 "mcp_token": values["MCP_CALLER_TOKEN"],
             }
@@ -111,124 +111,333 @@ def setup():
     obs.CONFIG.chmod(0o600)
     compose("up", "-d", "mcp")
     print(
-        f"Grafana: http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}/d/orpheus/foley-evidence · credentials stored privately."
+        f"Grafana: http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}/d/orpheus/agentic-foley-control-room · credentials stored privately."
     )
 
 
 def dashboard():
     panels = []
-
-    def panel(title, kind, expr, datasource="orpheus-loki", description=""):
-        i = len(panels)
-        panels.append(
-            {
-                "id": i + 1,
-                "title": title,
-                "type": kind,
-                "description": description,
-                "gridPos": {
-                    "x": 0 if kind == "logs" else (i % 2) * 12,
-                    "y": i * 5,
-                    "w": 24 if kind == "logs" else 12,
-                    "h": 8,
-                },
-                "datasource": {"uid": datasource},
-                "targets": [{"refId": "A", "expr": expr, "queryType": "range"}],
-                "options": {
-                    "showTime": True,
-                    "wrapLogMessage": True,
-                    "sortOrder": "Descending",
-                },
-            }
-        )
-
+    orange, green, amber, rose = "#FF5A36", "#9DCFAD", "#EAC17C", "#FF8790"
+    prom, loki = "orpheus-prometheus", "orpheus-loki"
     base = '{service_name="orpheus"} | json | project_id=~"$project"'
-    panel(
-        "Sound measurements · candidates and input/takes",
-        "logs",
-        base + ' | event=~"candidate|sound_profile|take_recorded"',
-        description="Signal descriptors are not perceptual approval. floor_p10 includes intentional quiet; active_fraction is a fixed -50 dBFS threshold.",
-    )
-    panel(
-        "Impact, source landmark and coverage evidence",
-        "logs",
-        base + ' | event=~"sound_event|candidate_timing_measured"',
-        description="Media timestamps are fields, not log timestamps. Peak errors are relative to agent anchors, not physical contact truth.",
-    )
-    panel(
-        "Audio envelope · picture/source seconds (not wall clock)",
-        "table",
-        base + ' | event="sound_envelope"',
-        description="RMS at up to 120 sampled windows per input/take. Select one project. Quiet is not automatically unwanted noise.",
-    )
-    panels[-1]["targets"][0]["maxLines"] = 500
-    panels[-1]["transformations"] = [
-        {
-            "id": "extractFields",
-            "options": {"source": "Line", "format": "json", "replace": True},
+
+    def target(expr, ref="A", datasource=prom, *, instant=False, legend=None):
+        source_type = "loki" if datasource == loki else "prometheus"
+        row = {
+            "refId": ref,
+            "expr": expr,
+            "datasource": {"type": source_type, "uid": datasource},
+            "editorMode": "code",
+        }
+        if instant:
+            row.update(instant=True, range=False)
+        elif datasource == prom:
+            row.update(format="time_series", instant=False, range=True)
+        if legend:
+            row["legendFormat"] = legend
+        if datasource == loki:
+            row["queryType"] = "instant" if instant else "range"
+            row["maxLines"] = 500
+        return row
+
+    def add(title, kind, grid, targets, *, description="", options=None,
+            field=None, transformations=None, overrides=None, datasource=None):
+        panel = {
+            "id": len(panels) + 1,
+            "title": title,
+            "type": kind,
+            "gridPos": grid,
+            "description": description,
+            "datasource": (
+                {"type": "prometheus" if datasource == prom else "loki", "uid": datasource}
+                if datasource
+                else {"type": "datasource", "uid": "-- Mixed --"}
+            ),
+            "targets": targets,
+            "options": options or {},
+            "fieldConfig": {"defaults": field or {}, "overrides": overrides or []},
+        }
+        if transformations:
+            panel["transformations"] = transformations
+        panels.append(panel)
+        return panel
+
+    stat_options = {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+        "textMode": "auto",
+    }
+    safe_thresholds = {
+        "mode": "absolute",
+        "steps": [{"color": green, "value": None}, {"color": rose, "value": 1}],
+    }
+    project = '{project_id=~"$project"}'
+
+    add(
+        "Candidate status", "stat", {"x": 0, "y": 0, "w": 4, "h": 4},
+        [target("orpheus_project_candidate_state" + project, instant=True)],
+        options=stat_options,
+        field={
+            "color": {"mode": "thresholds"},
+            "mappings": [{"type": "value", "options": {
+                "-1": {"text": "UNSUITABLE", "color": rose},
+                "0": {"text": "NO SELECTION", "color": amber},
+                "1": {"text": "REVIEW READY", "color": green},
+            }}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
         },
-        {
-            "id": "filterFieldsByName",
-            "options": {
-                "include": {
-                    "names": ["project_id", "role", "take_id", "media_s", "rms_dbfs"]
-                }
-            },
+    )
+    add(
+        "Contacts fitted", "stat", {"x": 4, "y": 0, "w": 4, "h": 4},
+        [target("orpheus_candidate_accepted_events" + project, instant=True)],
+        options=stat_options,
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
+    )
+    add(
+        "Clipped samples", "stat", {"x": 8, "y": 0, "w": 4, "h": 4},
+        [target("orpheus_candidate_clipped_samples" + project, instant=True)],
+        options=stat_options,
+        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds},
+    )
+    add(
+        "Picture integrity", "stat", {"x": 12, "y": 0, "w": 4, "h": 4},
+        [target("orpheus_candidate_picture_unchanged" + project, instant=True)],
+        options=stat_options,
+        field={
+            "color": {"mode": "thresholds"},
+            "mappings": [{"type": "value", "options": {
+                "0": {"text": "CHANGED", "color": rose},
+                "1": {"text": "PRESERVED", "color": green},
+            }}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]},
         },
-    ]
-    panel(
-        "Take experiments and human decisions",
-        "logs",
-        base + ' | event=~"take_recorded|take_experiment|human_review|selection"',
     )
-    panel(
-        "Provider and rejected tool calls",
-        "logs",
-        base
-        + ' | event=~".*failed|tool_result" | tool_error="true" or event=~".*failed"',
-        description="Failed inference is not evidence of absent sound. Read-only MCP can investigate; no automatic purchases or retry loops.",
+    add(
+        "Human approval", "stat", {"x": 16, "y": 0, "w": 4, "h": 4},
+        [target("orpheus_project_review_state" + project, instant=True)],
+        options=stat_options,
+        field={
+            "color": {"mode": "thresholds"},
+            "mappings": [{"type": "value", "options": {
+                "-1": {"text": "REJECTED", "color": rose},
+                "0": {"text": "PENDING", "color": amber},
+                "1": {"text": "APPROVED", "color": green},
+            }}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
+        },
     )
-    panel(
-        "Agent, tool and MCP execution",
-        "logs",
-        base
-        + ' | event=~"model_response|audio_response|grafana_query|tool_call|session_saved"',
-        description="Trace IDs link into Tempo. No raw prompts, media or credentials exported.",
+    add(
+        "Grafana evidence reads", "stat", {"x": 20, "y": 0, "w": 4, "h": 4},
+        [target('orpheus_project_events_total' + project[:-1] + ',event="grafana_investigation"}', instant=True)],
+        options=stat_options,
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
     )
-    panel(
-        "Telemetry outbox backlog",
-        "timeseries",
-        "orpheus_export_pending",
-        "orpheus-prometheus",
+
+    gauge_options = {
+        "displayMode": "gradient",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "left",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+        "showUnfilled": True,
+        "sizing": "auto",
+        "valueMode": "color",
+    }
+    add(
+        "Baseline vs agent", "bargauge", {"x": 0, "y": 4, "w": 12, "h": 8},
+        [
+            target("orpheus_baseline_integrated_lufs" + project, "A", instant=True, legend="Baseline · LUFS"),
+            target("orpheus_candidate_integrated_lufs" + project, "B", instant=True, legend="Agent · LUFS"),
+            target("orpheus_baseline_true_peak_dbtp" + project, "C", instant=True, legend="Baseline · dBTP"),
+            target("orpheus_candidate_true_peak_dbtp" + project, "D", instant=True, legend="Agent · dBTP"),
+        ],
+        description="A safer candidate retains every accepted contact while moving true peak farther below 0 dBTP. Loudness remains an audition decision.",
+        options=gauge_options,
+        field={
+            "color": {"mode": "continuous-GrYlRd"},
+            "decimals": 1,
+            "max": 0,
+            "min": -36,
+            "thresholds": {"mode": "absolute", "steps": [
+                {"color": green, "value": None}, {"color": amber, "value": -3}, {"color": rose, "value": -1},
+            ]},
+        },
     )
-    panel(
-        "Provider failures by status",
-        "timeseries",
-        "sum by(code) (increase(orpheus_provider_failures_total[5m]))",
-        "orpheus-prometheus",
+    add(
+        "Loudness safety", "gauge", {"x": 12, "y": 4, "w": 6, "h": 8},
+        [target("orpheus_candidate_true_peak_dbtp" + project, instant=True, legend="True peak")],
+        description="Decoded exported AAC true peak. The warning band starts at -3 dBTP; 0 dBTP is unsafe.",
+        options={"orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}, "showThresholdLabels": True, "showThresholdMarkers": True, "sizing": "auto"},
+        field={
+            "color": {"mode": "thresholds"}, "decimals": 1, "max": 0, "min": -12, "unit": "dB",
+            "thresholds": {"mode": "absolute", "steps": [
+                {"color": green, "value": None}, {"color": amber, "value": -3}, {"color": rose, "value": -1},
+            ]},
+        },
     )
-    panel(
-        "Reported token usage",
-        "timeseries",
-        "orpheus_reported_tokens_total",
-        "orpheus-prometheus",
-        description="Only usage returned by providers; missing usage is not zero billed usage.",
+    add(
+        "Maximum timing deviation", "gauge", {"x": 18, "y": 4, "w": 6, "h": 8},
+        [target("orpheus_candidate_max_abs_peak_error_ms" + project, instant=True, legend="Peak error")],
+        description="Peak error is relative to reviewed agent anchors, not physical contact ground truth.",
+        options={"orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}, "showThresholdLabels": True, "showThresholdMarkers": True, "sizing": "auto"},
+        field={
+            "color": {"mode": "thresholds"}, "decimals": 1, "max": 100, "min": 0, "unit": "ms",
+            "thresholds": {"mode": "absolute", "steps": [
+                {"color": green, "value": None}, {"color": amber, "value": 30}, {"color": rose, "value": 60},
+            ]},
+        },
     )
-    panel("Collector health", "timeseries", 'up{job="orpheus"}', "orpheus-prometheus")
+
+    extract = {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": False}}
+    add(
+        "Contact timing · milliseconds from reviewed anchor", "barchart",
+        {"x": 0, "y": 12, "w": 14, "h": 9},
+        [target(
+            'max by(mapping_id) (max_over_time(' + base
+            + ' | event="sound_event" | unwrap timing_error_ms [$__range]))',
+            datasource=loki,
+            instant=True,
+            legend="{{mapping_id}}",
+        )],
+        description="Each bar is one fitted contact. Zero is aligned; direction shows early or late placement.",
+        options={"barRadius": 0, "barWidth": 0.7, "fullHighlight": False, "groupWidth": 0.7, "legend": {"displayMode": "hidden", "placement": "bottom", "showLegend": False}, "orientation": "horizontal", "showValue": "always", "stacking": "none", "tooltip": {"mode": "single", "sort": "none"}, "xField": "Metric"},
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 1, "min": -60, "max": 60, "unit": "ms"},
+        transformations=[{"id": "seriesToRows", "options": {}}],
+    )
+    add(
+        "Family coverage · picture seconds", "barchart",
+        {"x": 14, "y": 12, "w": 10, "h": 9},
+        [target(base + ' | event="family_range"', datasource=loki)],
+        description="Orange bars are reviewed ranges on the picture clock. Gaps remain untouched; row labels retain accepted or rejected status.",
+        options={"barRadius": 0, "barWidth": 0.8, "fullHighlight": False, "groupWidth": 0.8, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}, "orientation": "horizontal", "showValue": "never", "stacking": "normal", "tooltip": {"mode": "multi", "sort": "none"}, "xField": "mapping_id"},
+        field={"decimals": 2, "min": 0, "unit": "s"},
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["mapping_id", "start_s", "range_duration_s"]}}},
+        ],
+        overrides=[
+            {"matcher": {"id": "byName", "options": "start_s"}, "properties": [{"id": "displayName", "value": "start"}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "#25272C"}}]},
+            {"matcher": {"id": "byName", "options": "range_duration_s"}, "properties": [{"id": "displayName", "value": "reviewed range"}, {"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}]},
+        ],
+    )
+
+    timeline_options = {
+        "alignValue": "left",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+        "mergeValues": True,
+        "rowHeight": 0.8,
+        "showValue": "always",
+        "tooltip": {"mode": "single", "sort": "none"},
+    }
+    add(
+        "Agent decision path", "state-timeline", {"x": 0, "y": 21, "w": 12, "h": 9},
+        [target(base + ' | event=~"deterministic_baseline|grafana_investigation|candidate|candidate_timing_measured|selection|human_review"', datasource=loki)],
+        description="Mandatory evidence gates appear beside render and selection events. Human review closes the path.",
+        options=timeline_options,
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0, "noValue": "Waiting"},
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event"]}}},
+        ],
+        datasource=loki,
+    )["timeFrom"] = "6h"
+    add(
+        "Provider execution", "state-timeline", {"x": 12, "y": 21, "w": 12, "h": 9},
+        [target(base + ' | event=~"model_attempt|model_failed|model_response|audio_request|audio_response" | line_format "{{.requested_model}} · {{.event}}"', datasource=loki)],
+        description="Provider responses and failures share one chronology so failover is visible without reading raw logs.",
+        options=timeline_options,
+        field={"color": {"mode": "continuous-GrYlRd"}, "decimals": 0},
+        transformations=[{"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "Line"]}}}],
+        datasource=loki,
+    )["timeFrom"] = "6h"
+
+    table_options = {"cellHeight": "sm", "footer": {"countRows": False, "fields": "", "reducer": ["sum"], "show": False}, "showHeader": True}
+    add(
+        "Experiment history", "table", {"x": 0, "y": 30, "w": 15, "h": 9},
+        [target(base + ' | event=~"take_recorded|take_experiment|selection|human_review|candidate_timing_measured"', datasource=loki)],
+        description="Immutable measurements and human decisions. Model observations remain hypotheses until reviewed.",
+        options=table_options,
+        transformations=[
+            extract,
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "candidate_id", "take_id", "decision", "verdict", "integrated_lufs", "true_peak_dbtp", "clipped_samples", "max_abs_peak_error_ms"]}}},
+        ],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
+    )
+    add(
+        "Grafana MCP", "stat", {"x": 15, "y": 30, "w": 3, "h": 4},
+        [target('(orpheus_project_events_total' + project[:-1] + ',event="grafana_investigation"} > bool 0)', instant=True)], options=stat_options,
+        description="Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
+        field={"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}},
+    )
+    add(
+        "Collector", "stat", {"x": 18, "y": 30, "w": 3, "h": 4},
+        [target('up{job="orpheus"}', instant=True)], options=stat_options,
+        field={"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": rose}, "1": {"text": "ONLINE", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]}},
+    )
+    add(
+        "Pending exports", "stat", {"x": 21, "y": 30, "w": 3, "h": 4},
+        [target("orpheus_export_pending", instant=True)], options=stat_options,
+        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds},
+    )
+    add(
+        "Provider failures", "stat", {"x": 15, "y": 34, "w": 4, "h": 5},
+        [target("orpheus_project_provider_failures_total" + project, instant=True)], options=stat_options,
+        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}, {"color": amber, "value": 1}, {"color": rose, "value": 3}]}},
+    )
+    add(
+        "Reported cost", "stat", {"x": 19, "y": 34, "w": 5, "h": 5},
+        [target("orpheus_project_reported_cost_usd_total" + project, instant=True)], options=stat_options,
+        description="Only provider-reported cost. Missing receipts are not zero cost.",
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 4, "unit": "currencyUSD"},
+    )
+
+    raw_children = []
+    for title, expr in (
+        ("Candidate and sound measurements", base + ' | event=~"candidate|candidate_timing_measured|sound_event|sound_profile"'),
+        ("Failures and rejected tools", base + ' | event=~".*failed|tool_result"'),
+        ("Agent, MCP and trace evidence", base + ' | event=~"model_response|audio_response|grafana_query|grafana_investigation|tool_call|session_saved"'),
+    ):
+        raw_children.append({
+            "id": len(panels) + len(raw_children) + 2,
+            "title": title,
+            "type": "logs",
+            "gridPos": {"x": 0, "y": 40 + len(raw_children) * 7, "w": 24, "h": 7},
+            "datasource": {"type": "loki", "uid": loki},
+            "targets": [target(expr, datasource=loki)],
+            "options": {"dedupStrategy": "none", "enableLogDetails": True, "prettifyLogMessage": False, "showCommonLabels": False, "showLabels": False, "showTime": True, "sortOrder": "Descending", "wrapLogMessage": True},
+        })
+    panels.append({
+        "id": len(panels) + 1,
+        "title": "Raw evidence · open for diagnosis",
+        "type": "row",
+        "collapsed": True,
+        "gridPos": {"x": 0, "y": 39, "w": 24, "h": 1},
+        "panels": raw_children,
+    })
     doc = {
         "uid": "orpheus",
-        "title": "Foley evidence",
+        "title": "Agentic Foley Control Room",
         "schemaVersion": 40,
-        "version": 1,
+        "version": 2,
         "refresh": "5s",
         "time": {"from": "now-14d", "to": "now"},
-        "tags": ["orpheus", "local"],
+        "tags": ["orpheus", "agent", "foley", "local"],
+        "description": "One decision surface for deterministic baseline, agent fitting, Grafana evidence, provider execution and human approval.",
+        "editable": False,
+        "graphTooltip": 1,
+        "links": [],
+        "liveNow": True,
+        "timepicker": {"refresh_intervals": ["5s", "10s", "30s", "1m"]},
         "templating": {
             "list": [
                 {
                     "name": "project",
                     "type": "textbox",
-                    "label": "Project ID regex",
+                    "label": "Project",
                     "current": {"text": ".*", "value": ".*"},
                 }
             ]

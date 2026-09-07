@@ -1,8 +1,8 @@
 {
   "uid": "orpheus",
-  "title": "Foley evidence",
+  "title": "Agentic Foley Control Room",
   "schemaVersion": 40,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-14d",
@@ -10,14 +10,29 @@
   },
   "tags": [
     "orpheus",
+    "agent",
+    "foley",
     "local"
   ],
+  "description": "One decision surface for deterministic baseline, agent fitting, Grafana evidence, provider execution and human approval.",
+  "editable": false,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": true,
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
   "templating": {
     "list": [
       {
         "name": "project",
         "type": "textbox",
-        "label": "Project ID regex",
+        "label": "Project",
         "current": {
           "text": ".*",
           "value": ".*"
@@ -28,246 +43,1554 @@
   "panels": [
     {
       "id": 1,
-      "title": "Sound measurements \u00b7 candidates and input/takes",
-      "type": "logs",
-      "description": "Signal descriptors are not perceptual approval. floor_p10 includes intentional quiet; active_fraction is a fixed -50 dBFS threshold.",
+      "title": "Candidate status",
+      "type": "stat",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
-        "h": 8
+        "w": 4,
+        "h": 4
       },
+      "description": "",
       "datasource": {
-        "uid": "orpheus-loki"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"candidate|sound_profile|take_recorded\"",
-          "queryType": "range"
+          "expr": "orpheus_project_candidate_state{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNSUITABLE",
+                  "color": "#FF8790"
+                },
+                "0": {
+                  "text": "NO SELECTION",
+                  "color": "#EAC17C"
+                },
+                "1": {
+                  "text": "REVIEW READY",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#EAC17C",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
       "id": 2,
-      "title": "Impact, source landmark and coverage evidence",
-      "type": "logs",
-      "description": "Media timestamps are fields, not log timestamps. Peak errors are relative to agent anchors, not physical contact truth.",
+      "title": "Contacts fitted",
+      "type": "stat",
       "gridPos": {
-        "x": 0,
-        "y": 5,
-        "w": 24,
-        "h": 8
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
+      "description": "",
       "datasource": {
-        "uid": "orpheus-loki"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"sound_event|candidate_timing_measured\"",
-          "queryType": "range"
+          "expr": "orpheus_candidate_accepted_events{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 0
+        },
+        "overrides": []
       }
     },
     {
       "id": 3,
-      "title": "Take experiments and human decisions",
-      "type": "logs",
-      "description": "",
+      "title": "Clipped samples",
+      "type": "stat",
       "gridPos": {
-        "x": 0,
-        "y": 10,
-        "w": 24,
-        "h": 8
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
+      "description": "",
       "datasource": {
-        "uid": "orpheus-loki"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"take_recorded|take_experiment|human_review|selection\"",
-          "queryType": "range"
+          "expr": "orpheus_candidate_clipped_samples{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#FF8790",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
       "id": 4,
-      "title": "Provider and tool failures",
-      "type": "logs",
-      "description": "Failed inference is not evidence of absent sound. Read-only MCP can investigate; no automatic purchases or retry loops.",
+      "title": "Picture integrity",
+      "type": "stat",
       "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 24,
-        "h": 8
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
+      "description": "",
       "datasource": {
-        "uid": "orpheus-loki"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\".*failed|tool_result\"",
-          "queryType": "range"
+          "expr": "orpheus_candidate_picture_unchanged{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "CHANGED",
+                  "color": "#FF8790"
+                },
+                "1": {
+                  "text": "PRESERVED",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF8790",
+                "value": null
+              },
+              {
+                "color": "#9DCFAD",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
       "id": 5,
-      "title": "Agent, tool and MCP execution",
-      "type": "logs",
-      "description": "Trace IDs link into Tempo. No raw prompts, media or credentials exported.",
+      "title": "Human approval",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_review_state{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "REJECTED",
+                  "color": "#FF8790"
+                },
+                "0": {
+                  "text": "PENDING",
+                  "color": "#EAC17C"
+                },
+                "1": {
+                  "text": "APPROVED",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#EAC17C",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Grafana evidence reads",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_events_total{project_id=~\"$project\",event=\"grafana_investigation\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Baseline vs agent",
+      "type": "bargauge",
       "gridPos": {
         "x": 0,
-        "y": 20,
-        "w": 24,
+        "y": 4,
+        "w": 12,
         "h": 8
       },
+      "description": "A safer candidate retains every accepted contact while moving true peak farther below 0 dBTP. Loudness remains an audition decision.",
       "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_baseline_integrated_lufs{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Baseline \u00b7 LUFS"
+        },
+        {
+          "refId": "B",
+          "expr": "orpheus_candidate_integrated_lufs{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Agent \u00b7 LUFS"
+        },
+        {
+          "refId": "C",
+          "expr": "orpheus_baseline_true_peak_dbtp{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Baseline \u00b7 dBTP"
+        },
+        {
+          "refId": "D",
+          "expr": "orpheus_candidate_true_peak_dbtp{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Agent \u00b7 dBTP"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "left",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "decimals": 1,
+          "max": 0,
+          "min": -36,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#EAC17C",
+                "value": -3
+              },
+              {
+                "color": "#FF8790",
+                "value": -1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Loudness safety",
+      "type": "gauge",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Decoded exported AAC true peak. The warning band starts at -3 dBTP; 0 dBTP is unsafe.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_candidate_true_peak_dbtp{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "True peak"
+        }
+      ],
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "max": 0,
+          "min": -12,
+          "unit": "dB",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#EAC17C",
+                "value": -3
+              },
+              {
+                "color": "#FF8790",
+                "value": -1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Maximum timing deviation",
+      "type": "gauge",
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Peak error is relative to reviewed agent anchors, not physical contact ground truth.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_candidate_max_abs_peak_error_ms{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Peak error"
+        }
+      ],
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#EAC17C",
+                "value": 30
+              },
+              {
+                "color": "#FF8790",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Contact timing \u00b7 milliseconds from reviewed anchor",
+      "type": "barchart",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 14,
+        "h": 9
+      },
+      "description": "Each bar is one fitted contact. Zero is aligned; direction shows early or late placement.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by(mapping_id) (max_over_time({service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=\"sound_event\" | unwrap timing_error_ms [$__range]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{mapping_id}}",
+          "queryType": "instant",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "Metric"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 1,
+          "min": -60,
+          "max": 60,
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Family coverage \u00b7 picture seconds",
+      "type": "barchart",
+      "gridPos": {
+        "x": 14,
+        "y": 12,
+        "w": 10,
+        "h": 9
+      },
+      "description": "Orange bars are reviewed ranges on the picture clock. Gaps remain untouched; row labels retain accepted or rejected status.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=\"family_range\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "groupWidth": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "horizontal",
+        "showValue": "never",
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "mapping_id"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start_s"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "start"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#25272C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "range_duration_s"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "reviewed range"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF5A36"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": true
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "mapping_id",
+                "start_s",
+                "range_duration_s"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Agent decision path",
+      "type": "state-timeline",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 9
+      },
+      "description": "Mandatory evidence gates appear beside render and selection events. Human review closes the path.",
+      "datasource": {
+        "type": "loki",
         "uid": "orpheus-loki"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_response|audio_response|grafana_query|tool_call|session_saved\"",
-          "queryType": "range"
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"deterministic_baseline|grafana_investigation|candidate|candidate_timing_measured|selection|human_review\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
-      }
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 0,
+          "noValue": "Waiting"
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": true,
+            "keepTime": true
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "event"
+              ]
+            }
+          }
+        }
+      ],
+      "timeFrom": "6h"
     },
     {
-      "id": 6,
-      "title": "Telemetry outbox backlog",
-      "type": "timeseries",
-      "description": "",
+      "id": 13,
+      "title": "Provider execution",
+      "type": "state-timeline",
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 21,
         "w": 12,
-        "h": 8
+        "h": 9
       },
+      "description": "Provider responses and failures share one chronology so failover is visible without reading raw logs.",
       "datasource": {
-        "uid": "orpheus-prometheus"
+        "type": "loki",
+        "uid": "orpheus-loki"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "orpheus_export_pending",
-          "queryType": "range"
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_attempt|model_failed|model_response|audio_request|audio_response\" | line_format \"{{.requested_model}} \u00b7 {{.event}}\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
-      }
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "Line"
+              ]
+            }
+          }
+        }
+      ],
+      "timeFrom": "6h"
     },
     {
-      "id": 7,
-      "title": "Provider failures by status",
-      "type": "timeseries",
-      "description": "",
+      "id": 14,
+      "title": "Experiment history",
+      "type": "table",
       "gridPos": {
         "x": 0,
         "y": 30,
-        "w": 12,
-        "h": 8
+        "w": 15,
+        "h": 9
       },
+      "description": "Immutable measurements and human decisions. Model observations remain hypotheses until reviewed.",
       "datasource": {
-        "uid": "orpheus-prometheus"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(code) (increase(orpheus_provider_failures_total[5m]))",
-          "queryType": "range"
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"take_recorded|take_experiment|selection|human_review|candidate_timing_measured\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
-      }
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": false
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "event",
+                "candidate_id",
+                "take_id",
+                "decision",
+                "verdict",
+                "integrated_lufs",
+                "true_peak_dbtp",
+                "clipped_samples",
+                "max_abs_peak_error_ms"
+              ]
+            }
+          }
+        }
+      ]
     },
     {
-      "id": 8,
-      "title": "Reported token usage",
-      "type": "timeseries",
-      "description": "Only usage returned by providers; missing usage is not zero billed usage.",
+      "id": 15,
+      "title": "Grafana MCP",
+      "type": "stat",
       "gridPos": {
-        "x": 12,
-        "y": 35,
-        "w": 12,
-        "h": 8
+        "x": 15,
+        "y": 30,
+        "w": 3,
+        "h": 4
       },
+      "description": "Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
       "datasource": {
-        "uid": "orpheus-prometheus"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "orpheus_reported_tokens_total",
-          "queryType": "range"
+          "expr": "(orpheus_project_events_total{project_id=~\"$project\",event=\"grafana_investigation\"} > bool 0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NO EVIDENCE",
+                  "color": "#EAC17C"
+                },
+                "1": {
+                  "text": "VERIFIED",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#EAC17C",
+                "value": null
+              },
+              {
+                "color": "#9DCFAD",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
-      "id": 9,
-      "title": "Collector health",
-      "type": "timeseries",
+      "id": 16,
+      "title": "Collector",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 30,
+        "w": 3,
+        "h": 4
+      },
       "description": "",
-      "gridPos": {
-        "x": 0,
-        "y": 40,
-        "w": 12,
-        "h": 8
-      },
       "datasource": {
-        "uid": "orpheus-prometheus"
+        "type": "datasource",
+        "uid": "-- Mixed --"
       },
       "targets": [
         {
           "refId": "A",
           "expr": "up{job=\"orpheus\"}",
-          "queryType": "range"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "showTime": true,
-        "wrapLogMessage": true,
-        "sortOrder": "Descending"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "#FF8790"
+                },
+                "1": {
+                  "text": "ONLINE",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF8790",
+                "value": null
+              },
+              {
+                "color": "#9DCFAD",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
+    },
+    {
+      "id": 17,
+      "title": "Pending exports",
+      "type": "stat",
+      "gridPos": {
+        "x": 21,
+        "y": 30,
+        "w": 3,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_export_pending",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#FF8790",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "title": "Provider failures",
+      "type": "stat",
+      "gridPos": {
+        "x": 15,
+        "y": 34,
+        "w": 4,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_provider_failures_total{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#9DCFAD",
+                "value": null
+              },
+              {
+                "color": "#EAC17C",
+                "value": 1
+              },
+              {
+                "color": "#FF8790",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "title": "Reported cost",
+      "type": "stat",
+      "gridPos": {
+        "x": 19,
+        "y": 34,
+        "w": 5,
+        "h": 5
+      },
+      "description": "Only provider-reported cost. Missing receipts are not zero cost.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_reported_cost_usd_total{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 4,
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "title": "Raw evidence \u00b7 open for diagnosis",
+      "type": "row",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "id": 21,
+          "title": "Candidate and sound measurements",
+          "type": "logs",
+          "gridPos": {
+            "x": 0,
+            "y": 40,
+            "w": 24,
+            "h": 7
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"candidate|candidate_timing_measured|sound_event|sound_profile\"",
+              "datasource": {
+                "type": "loki",
+                "uid": "orpheus-loki"
+              },
+              "editorMode": "code",
+              "queryType": "range",
+              "maxLines": 500
+            }
+          ],
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          }
+        },
+        {
+          "id": 22,
+          "title": "Failures and rejected tools",
+          "type": "logs",
+          "gridPos": {
+            "x": 0,
+            "y": 47,
+            "w": 24,
+            "h": 7
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\".*failed|tool_result\"",
+              "datasource": {
+                "type": "loki",
+                "uid": "orpheus-loki"
+              },
+              "editorMode": "code",
+              "queryType": "range",
+              "maxLines": 500
+            }
+          ],
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          }
+        },
+        {
+          "id": 23,
+          "title": "Agent, MCP and trace evidence",
+          "type": "logs",
+          "gridPos": {
+            "x": 0,
+            "y": 54,
+            "w": 24,
+            "h": 7
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_response|audio_response|grafana_query|grafana_investigation|tool_call|session_saved\"",
+              "datasource": {
+                "type": "loki",
+                "uid": "orpheus-loki"
+              },
+              "editorMode": "code",
+              "queryType": "range",
+              "maxLines": 500
+            }
+          ],
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          }
+        }
+      ]
     }
   ]
 }

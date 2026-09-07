@@ -266,6 +266,21 @@ async def run_turn(pid, family_id, feedback):
             metrics=baseline["metrics"],
             measurements={"accepted_events": len(case["accepted_ranges"])},
         )
+        family = families.get(pid, family_id)
+        for status, key in (
+            ("accepted", "accepted_ranges"),
+            ("rejected", "rejected_ranges"),
+        ):
+            for index, item in enumerate(family[key], 1):
+                start, end = item["range_s"]
+                log(
+                    "family_range",
+                    mapping_id=f"{status}-{index}",
+                    status=status,
+                    start_s=start,
+                    end_s=end,
+                    measurements={"range_duration_s": end - start},
+                )
         phase = "session"
         session_id = pid + "-" + family_id
         session = await service.get_session(

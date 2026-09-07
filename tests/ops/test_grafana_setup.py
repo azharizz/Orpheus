@@ -11,6 +11,22 @@ from orpheus.ops import grafana, observability
 
 
 class GrafanaSetupChecks(unittest.TestCase):
+    def test_control_room_prioritizes_decisions_over_raw_logs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(grafana, "OBSERVABILITY_ASSETS", root):
+                grafana.dashboard()
+            doc = json.loads((root / "dashboards/foley.json").read_text())
+            kinds = [panel["type"] for panel in doc["panels"]]
+            self.assertEqual(doc["title"], "Agentic Foley Control Room")
+            self.assertIn("state-timeline", kinds)
+            self.assertIn("barchart", kinds)
+            self.assertIn("gauge", kinds)
+            self.assertNotIn("logs", kinds)
+            raw = next(panel for panel in doc["panels"] if panel["type"] == "row")
+            self.assertTrue(raw["collapsed"])
+            self.assertEqual(len(raw["panels"]), 3)
+
     def test_setup_ports_config_and_private_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)

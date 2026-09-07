@@ -17,6 +17,29 @@ from orpheus.ops import observability as o
 
 
 class EvidenceChecks(unittest.TestCase):
+    def test_project_metrics_compare_baseline_agent_and_review_state(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(o, "STORE", Path(tmp)),
+            patch.object(o, "DB", Path(tmp) / "db"),
+            patch.object(o, "config", return_value={"enabled": True}),
+        ):
+            pid = "1234567890abcdef"
+            o.emit(pid, "deterministic_baseline", {"metrics": {
+                "integrated_lufs": -26.2, "true_peak_dbtp": -0.5,
+                "picture_unchanged": True, "clipped_samples": 0,
+            }, "measurements": {"accepted_events": 9}})
+            o.emit(pid, "candidate", {"metrics": {
+                "integrated_lufs": -28.4, "true_peak_dbtp": -4.3,
+                "picture_unchanged": True, "clipped_samples": 0,
+            }, "measurements": {"accepted_events": 9}})
+            o.emit(pid, "selection", {"decision": "needs_human_review"})
+            metrics = o.metrics_text()
+            self.assertIn(f'orpheus_baseline_integrated_lufs{{project_id="{pid}"}} -26.2', metrics)
+            self.assertIn(f'orpheus_candidate_integrated_lufs{{project_id="{pid}"}} -28.4', metrics)
+            self.assertIn(f'orpheus_project_candidate_state{{project_id="{pid}"}} 1', metrics)
+            self.assertIn(f'orpheus_project_review_state{{project_id="{pid}"}} 0', metrics)
+
     def test_redaction_idempotence_outage_and_signal(self):
         with (
             tempfile.TemporaryDirectory() as tmp,

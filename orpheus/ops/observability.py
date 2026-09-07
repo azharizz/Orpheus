@@ -134,6 +134,7 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         "failure_code",
         "operation",
         "provenance",
+        "topic",
     ):
         if key in fields:
             payload[key] = token(fields[key])
@@ -413,16 +414,44 @@ def metrics_text():
     tokens = 0
     cost = 0
     latest = {}
+    projects = {}
     for r in rows:
         counts[r["event"]] = counts.get(r["event"], 0) + 1
+        project = projects.setdefault(
+            r["project_id"],
+            {"events": {}, "providers": {}, "failures": 0, "tokens": 0, "cost": 0},
+        )
+        project["events"][r["event"]] = project["events"].get(r["event"], 0) + 1
         if r["event"] in ("model_failed", "audio_failed"):
             key = str(r.get("status_code", "unknown"))
             failures[key] = failures.get(key, 0) + 1
+            project["failures"] += 1
         if r["event"] in ("model_response", "audio_response"):
-            tokens += r.get("total_token_count", r.get("total_tokens", 0))
-            cost += r.get("cost", 0)
+            usage = r.get("total_token_count", r.get("total_tokens", 0))
+            charge = r.get("cost", 0)
+            tokens += usage
+            cost += charge
+            project["tokens"] += usage
+            project["cost"] += charge
+        if r["event"] in (
+            "model_response", "audio_response", "model_failed", "audio_failed"
+        ):
+            provider = r.get("requested_model", "unknown")
+            outcome = "failed" if r["event"].endswith("failed") else "served"
+            key = (provider, outcome)
+            project["providers"][key] = project["providers"].get(key, 0) + 1
+        if r["event"] == "deterministic_baseline":
+            project["baseline"] = r
         if r["event"] in ("candidate", "candidate_timing_measured"):
             latest = r
+        if r["event"] == "candidate":
+            project["candidate"] = r
+        if r["event"] == "candidate_timing_measured":
+            project["timing"] = r
+        if r["event"] == "selection":
+            project["selection"] = r
+        if r["event"] == "human_review":
+            project["review"] = r
     lines = ["# TYPE orpheus_events_total counter"]
     lines += [f'orpheus_events_total{{event="{key}"}} {n}' for key, n in counts.items()]
     lines += ["# TYPE orpheus_provider_failures_total counter"] + [
@@ -445,6 +474,44 @@ def metrics_text():
     ):
         if finite(latest.get(key)):
             lines.append(f"orpheus_latest_candidate_{key} {latest[key]}")
+    selection_states = {"unsuitable": -1, "needs_human_review": 1}
+    review_states = {"rejected": -1, "approved": 1}
+    measured = (
+        "integrated_lufs",
+        "true_peak_dbtp",
+        "clipped_samples",
+        "event_count",
+        "accepted_events",
+        "max_abs_peak_error_ms",
+        "picture_unchanged",
+    )
+    for project_id, project in projects.items():
+        labels = f'project_id="{project_id}"'
+        lines += [
+            f"orpheus_project_candidate_state{{{labels}}} "
+            + str(selection_states.get(project.get("selection", {}).get("decision"), 0)),
+            f"orpheus_project_review_state{{{labels}}} "
+            + str(review_states.get(project.get("review", {}).get("verdict"), 0)),
+            f"orpheus_project_provider_failures_total{{{labels}}} {project['failures']}",
+            f"orpheus_project_reported_tokens_total{{{labels}}} {project['tokens']}",
+            f"orpheus_project_reported_cost_usd_total{{{labels}}} {project['cost']}",
+        ]
+        lines += [
+            f'orpheus_project_events_total{{{labels},event="{event}"}} {count}'
+            for event, count in project["events"].items()
+        ]
+        lines += [
+            f'orpheus_project_provider_events_total{{{labels},model="{model}",outcome="{outcome}"}} {count}'
+            for (model, outcome), count in project["providers"].items()
+        ]
+        for stage in ("baseline", "candidate"):
+            row = project.get(stage, {})
+            for key in measured:
+                value = row.get(key, project.get("timing", {}).get(key))
+                if isinstance(value, bool):
+                    value = int(value)
+                if finite(value):
+                    lines.append(f"orpheus_{stage}_{key}{{{labels}}} {value}")
     return "\n".join(lines) + "\n"
 
 
