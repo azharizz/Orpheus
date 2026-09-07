@@ -35,6 +35,13 @@ def project_dir(project_id):
     return PROJECTS / project_id
 
 
+def remove(project_id):
+    folder = project_dir(project_id)
+    if not folder.is_dir() or folder.is_symlink():
+        raise FileNotFoundError(project_id)
+    shutil.rmtree(folder)
+
+
 def load(project_id):
     path = project_dir(project_id)
     doc = json.loads((path / "project.json").read_text())

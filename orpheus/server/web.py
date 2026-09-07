@@ -363,6 +363,29 @@ class Handler(LocalHandler):
                 422,
             )
 
+    def do_DELETE(self):
+        try:
+            self.local_request(mutation=True)
+            route = urlparse(self.path).path
+            match = re.fullmatch(r"/api/projects/([a-f0-9]{16})", route)
+            if not match:
+                raise RequestError("Route not found.", 404)
+            with mutation():
+                projects.remove(match.group(1))
+            self.send_json({"deleted": match.group(1)})
+        except RequestError as error:
+            self.send_json({"error": str(error)}, error.status)
+        except BlockingIOError:
+            self.send_json(
+                {"error": "An agent run or edit is active. Wait for it to finish."}, 409
+            )
+        except (ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+            self.send_json({"error": "Invalid project ID."}, 400)
+        except FileNotFoundError:
+            self.send_json({"error": "Project or artifact not found."}, 404)
+        except OSError:
+            self.send_json({"error": "Project could not be deleted. Check local files."}, 422)
+
     def upload(self, route):
         take = route == "/api/takes"
         query = parse_qs(urlparse(self.path).query, keep_blank_values=True)

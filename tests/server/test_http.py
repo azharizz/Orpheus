@@ -69,6 +69,20 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.json()["storage"], "local")
         self.assertNotIn("key", response.text.lower())
 
+    def test_delete_project_requires_same_origin_and_removes_local_media(self):
+        pid = "0123456789abcdef"
+        folder = projects.project_dir(pid)
+        folder.mkdir(parents=True)
+        (folder / "project.json").write_text("{}")
+        response = self.client.delete(
+            f"/api/projects/{pid}", headers={"Origin": "https://evil.example"}
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+        response = self.client.delete(f"/api/projects/{pid}")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"deleted": pid})
+        self.assertFalse(folder.exists())
+
     def test_movie_routes_are_deterministic_and_return_review_state(self):
         source = load_case()
         doc = projects.create(source["video_path"])

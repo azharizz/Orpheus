@@ -160,13 +160,13 @@ function SoundSyncMark({ wave }) {
     </svg>
   );
 }
-function Landing({ projects, loading, paused, library, wave }) {
+function Landing({ projects, loading, paused, library, wave, busy, errors }) {
   return (
     <main
       id="main"
       className={library ? "entrance project-library" : "entrance"}
     >
-      {library ? <ProjectLibrary projects={projects} loading={loading} /> : (
+      {library ? <ProjectLibrary projects={projects} loading={loading} busy={busy} errors={errors} /> : (
         <section className="landing-hero">
           <PhotographicTitle paused={paused} />
           <div className="landing-statement" id="about">
@@ -178,59 +178,91 @@ function Landing({ projects, loading, paused, library, wave }) {
     </main>
   );
 }
-function ProjectLibrary({ projects, loading }) {
+function ProjectLibrary({ projects, loading, busy, errors = [] }) {
+  const [deleting, setDeleting] = useState("");
+  async function remove(project) {
+    if (!window.confirm(`Delete “${project.video_name}” and all of its local media?`)) return;
+    setDeleting(project.id);
+    try {
+      await action(
+        () => api(`/api/projects/${project.id}`, { method: "DELETE" }),
+        "Project deleted.",
+      );
+    } finally {
+      setDeleting("");
+    }
+  }
   return (
-      <section aria-labelledby="projects-title">
-        <div className="section-heading">
-          <div>
-            <h2 id="projects-title">YOUR SCENES</h2>
-          </div>
-          <span className="muted">
-            Saved on this computer ·{" "}
-            {projects.length.toString().padStart(2, "0")} {projects.length === 1 ? "file" : "files"}
-          </span>
+    <section aria-labelledby="projects-title">
+      <div className="section-heading">
+        <h1 id="projects-title">PROJECTS</h1>
+        <div className="section-heading-meta">
+          <span className="muted">{projects.length + errors.length} local</span>
+          <a href="/workspace">New project</a>
         </div>
-        {loading ? (
-          <p className="loading">Loading your project library…</p>
-        ) : projects.length ? (
-          <div className="filmstrip">
-            {projects.map((p, i) => (
-              <a
-                className="scene"
-                key={p.id}
-                href={"/workspace?project=" + p.id}
-              >
-                <div className="scene-picture">
-                  <img
-                    src={"/projects/" + p.id + "/poster.jpg"}
-                    alt={`Prepared picture from ${p.video_name}`}
-                    loading={i > 1 ? "lazy" : "eager"}
-                  />
-                </div>
-                <div className="scene-caption">
-                  <h3>{p.video_name}</h3>
-                  <span>{time(p.seconds)}</span>
-                </div>
-                <p>
-                  {label(p.status)} ·{" "}
-                  {p.has_original_audio
-                    ? "Original audio present"
-                    : "No original audio"}
-                </p>
+      </div>
+      {loading ? (
+        <p className="loading">Loading your project library…</p>
+      ) : projects.length || errors.length ? (
+        <div className="project-list">
+          {projects.map((p, i) => (
+            <article className="project-row" key={p.id}>
+              <a className="project-poster" href={"/workspace?project=" + p.id} aria-label={`Open ${p.video_name}`}>
+                <img
+                  src={"/projects/" + p.id + "/poster.jpg"}
+                  alt=""
+                  loading={i > 1 ? "lazy" : "eager"}
+                />
               </a>
-            ))}
-          </div>
-        ) : (
-          <div className="library-empty">
-            <h2>Your first scene starts here.</h2>
-            <p>
-              Bring a video, mark one sound, and review related moments. Orpheus keeps
-              the original and every alternative together.
-            </p>
-            <a href="/workspace">Choose a picture</a>
-          </div>
-        )}
-      </section>
+              <div className="project-row-copy">
+                <a className="project-row-title" href={"/workspace?project=" + p.id}>{p.video_name}</a>
+                <div className="project-row-meta">
+                  <span>{time(p.seconds)}</span>
+                  <span>{label(p.status)}</span>
+                  <span>{p.has_original_audio ? "Audio" : "Silent"}</span>
+                </div>
+              </div>
+              <div className="project-row-actions">
+                <a className="registration-frame registration-frame-small" href={"/workspace?project=" + p.id}>Open</a>
+                <button
+                  className="project-delete"
+                  type="button"
+                  disabled={busy || Boolean(deleting)}
+                  onClick={() => remove(p)}
+                  aria-label={`Delete ${p.video_name}`}
+                >
+                  {deleting === p.id ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </article>
+          ))}
+          {errors.map((item) => (
+            <article className="project-row project-row-error" key={item.project_id}>
+              <div className="project-row-copy">
+                <strong className="project-row-title">Retained project {item.project_id}</strong>
+                <div className="project-row-meta"><span>Receipt unreadable</span><span>Files retained</span></div>
+              </div>
+              <div className="project-row-actions">
+                <button
+                  className="project-delete"
+                  type="button"
+                  disabled={busy || Boolean(deleting)}
+                  onClick={() => remove({ id: item.project_id, video_name: `retained project ${item.project_id}` })}
+                >
+                  {deleting === item.project_id ? "Deleting…" : "Delete retained files"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="library-empty">
+          <h2>Your first scene starts here.</h2>
+          <p>Bring a video, mark one sound, and review related moments.</p>
+          <a href="/workspace">Choose a picture</a>
+        </div>
+      )}
+    </section>
   );
 }
 function preparationStage(progress) {
@@ -323,7 +355,7 @@ function App() {
           <button onClick={() => update({ error: "" })}>Dismiss</button>
         </div>
       )}
-      {state.errors?.map((item) => (
+      {!library && state.errors?.map((item) => (
         <p className="error" role="alert" key={item.project_id}>
           Project {item.project_id}: {item.error}
         </p>
