@@ -24,7 +24,7 @@ export function IndexStatus({ project, data }) {
   );
 }
 
-function NewFamily({ project, position, disabled, onCreated }) {
+function NewFamily({ project, position, disabled, onCreated, defer }) {
   const [name, setName] = useState("");
   const [start, setStart] = useState(Math.max(0, position - 0.25));
   const [end, setEnd] = useState(Math.min(project.seconds, position + 0.25));
@@ -38,8 +38,11 @@ function NewFamily({ project, position, disabled, onCreated }) {
             project_id: project.id,
             name: name.trim() || `Sound at ${time(range[0])}`,
             seed_range_s: range,
+            defer,
           }),
-        "Sound example saved. Similar moments are ready for review when indexing completes.",
+        defer
+          ? "Part example saved. Add and approve its replacement before searching the full movie."
+          : "Sound example saved. Similar moments are ready for review when indexing completes.",
       );
       if (result) {
         await loadFamilies(project.id);
@@ -56,8 +59,8 @@ function NewFamily({ project, position, disabled, onCreated }) {
         <div>
           <h2>Mark one sound</h2>
           <p>
-            Name the event and bracket one clear occurrence. This example
-            starts a review queue; it changes no audio.
+            Name the event and bracket one clear occurrence. This part changes
+            no audio and starts no paid inference.
           </p>
         </div>
       </div>
@@ -112,13 +115,13 @@ function NewFamily({ project, position, disabled, onCreated }) {
         </button>
       </div>
       <button className="primary" disabled={disabled}>
-        Find related moments
+        {defer ? "Create part family" : "Find related moments"}
       </button>
     </form>
   );
 }
 
-function MatchReview({ project, family, disabled, onPreview }) {
+export function MatchReview({ project, family, disabled, onPreview }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
   const [page, setPage] = useState(0);
@@ -274,9 +277,9 @@ function AgentFit({ project, family, disabled, state }) {
     <form className="agent-fit" onSubmit={run}>
       <h3>Agent-coordinated family fit</h3>
       <p className="muted">
-        Orpheus renders a deterministic baseline, asks the agent to improve timing,
-        crop, and gain, then requires Grafana MCP evidence before proposing a result.
-        Every edit stays inside kept moments.
+        The agent studies this family’s confirmed part, renders a deterministic
+        baseline, and uses Grafana MCP evidence before proposing a fitted result.
+        It does not search the rest of the movie.
       </p>
       <p className={state.observability?.enabled ? "agent-ready" : "error"} role="status">
         {state.observability?.enabled
@@ -312,6 +315,36 @@ function AgentFit({ project, family, disabled, state }) {
   );
 }
 
+function PartRender({ project, family, disabled, candidate, state, onCandidate, onMovieSearch }) {
+  const localPreview = () => action(async () => {
+    const result = await post("/api/families/render", { project_id: project.id, family_id: family.id });
+    onCandidate(result);
+    return result;
+  }, "Local part preview rendered. Listen before approval.");
+  const propagate = () => action(async () => {
+    const result = await post("/api/families/search", { project_id: project.id, family_id: family.id });
+    await loadFamilies(project.id);
+    onMovieSearch(family.id);
+    return result;
+  }, "Approved family searched across the full movie.");
+  const current = candidate?.family_id === family.id ? candidate : family.latest_render;
+  const approved = family.latest_render?.human_approved === true;
+  return <>
+    <section className="family-step">
+      <div className="step-heading"><span className="step-number">03</span><div><h2>Fit and approve this part</h2><p>Build a local baseline or authorize the agent to refine timing, crop, and gain inside this confirmed part.</p></div></div>
+      {!family.replacement_take_id && <p className="muted">Save a replacement take to enable fitting.</p>}
+      <div className="actions"><button disabled={disabled || !family.replacement_take_id} onClick={localPreview}>Build local part preview</button></div>
+      <AgentFit project={project} family={family} disabled={disabled || !family.replacement_take_id} state={state} />
+      {current && <Review p={project} c={current} locked={disabled} />}
+    </section>
+    {family.scope === "part" && <section className="family-step family-propagate">
+      <div className="step-heading"><span className="step-number">04</span><div><h2>Find this family across the movie</h2><p>The local acoustic index searches for this approved example. Every result remains pending until you listen and decide.</p></div></div>
+      <button className="primary" disabled={disabled || !approved} onClick={propagate}>Find across full movie</button>
+      {!approved && <p className="muted">Approve the current part preview to unlock the full-movie search.</p>}
+    </section>}
+  </>;
+}
+
 export function FamilyWorkbench({
   project,
   data,
@@ -322,11 +355,13 @@ export function FamilyWorkbench({
   state,
   onCandidate,
   onPreview,
+  selectedFamilyId,
+  onMovieSearch,
 }) {
   const families = Array.isArray(data) ? data : data?.families || [];
   const index = data?.index || project.similarity_index;
   const indexReady = index?.status === "ready" && project.has_original_audio;
-  const [chosen, setChosen] = useState("");
+  const [chosen, setChosen] = useState(selectedFamilyId || "");
   const [adding, setAdding] = useState(false);
   const family = families.find((item) => item.id === chosen) || families[0];
   function created(id) {
@@ -367,6 +402,7 @@ export function FamilyWorkbench({
           position={position}
           disabled={disabled || !indexReady}
           onCreated={created}
+          defer={project.seconds >= 300}
         />
       )}
       {(!family || adding) && !indexReady && (
@@ -387,17 +423,12 @@ export function FamilyWorkbench({
               {rangesCount(family.rejected_ranges)} excluded
             </p>
           </div>
-          <MatchReview
-            key={family.id + ":" + (family.search_version || "")}
-            project={project}
-            family={family}
-            disabled={disabled}
-            onPreview={onPreview}
-          />
+          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} onPreview={onPreview} />}
+          {family.scope !== "part" && project.seconds >= 300 && <p className="family-full-link">Review {(family.pending_matches || []).length} proposed matches in <strong>Full Movie</strong>. Open any one there for detailed listening in Part.</p>}
           {family.warning && <p className="warning">{family.warning}</p>}
           <section className="family-step">
             <div className="step-heading">
-              <span className="step-number">03</span>
+              <span className="step-number">{family.scope === "part" ? "02" : "03"}</span>
               <div>
                 <h2>Perform the replacement</h2>
                 <p>
@@ -414,7 +445,7 @@ export function FamilyWorkbench({
               transport={transport}
             />
           </section>
-          <section className="family-step">
+          {family.scope === "part" ? <PartRender project={project} family={family} disabled={disabled} candidate={candidate} state={state} onCandidate={onCandidate} onMovieSearch={onMovieSearch} /> : <section className="family-step">
             <div className="step-heading">
               <span className="step-number">04</span>
               <div>
@@ -446,7 +477,7 @@ export function FamilyWorkbench({
                 locked={disabled}
               />
             )}
-          </section>
+          </section>}
         </>
       )}
     </div>

@@ -66,6 +66,10 @@ The synthesis is visible in the large photographic ORPHEUS shutters, framed imag
 
 - Use the same header treatment as the landing page. Grain repeats through the full document height.
 - Lead with picture and shared transport. Never duplicate competing playback controls.
+- Use `PART` and `FULL MOVIE` tabs over that same picture, transport, playhead, families, takes, candidates, and review state. Default every project to `PART`.
+- `PART` holds the detailed 5/15/30/60-second waveform, family creation, SFX performance, agent fitting, A/B audition, exact approval, and evidence. The user can recenter its stable window at the playhead.
+- `FULL MOVIE` holds bounded Full/10-minute/2-minute waveform views, contact density, unclassified suggestions, noise/watch ranges, accepted/rejected family coverage, paged match review, and exact links back to `PART`.
+- Never stretch an hour-long waveform into a detail editor. Request only the visible audio interval at a bounded resolution.
 - Show the original waveform with accepted and pending ranges plus a real playhead.
 - Present one sequential family workflow: mark, review, perform, render/listen.
 - Keep the evidence rail available without letting it compete with the current action.

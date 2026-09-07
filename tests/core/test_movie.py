@@ -54,14 +54,16 @@ class MovieAnalysisTests(unittest.TestCase):
                 target.setparams((1, 2, rate, len(samples), "NONE", "not compressed"))
                 target.writeframes(np.round(samples * 32767).astype("<i2").tobytes())
             case = {"id": "1234567890abcdef", "seconds": 5, "original_path": audio}
-            families = [{"id": "abcdef123456", "name": "Footsteps", "status": "review_required", "replacement_take_id": None}]
-            with patch.object(projects, "load", return_value=case), patch.object(projects, "project_dir", return_value=folder), patch.object(movie, "_propose_families", return_value=families), patch.object(movie.obs, "emit"):
+            with patch.object(projects, "load", return_value=case), patch.object(projects, "project_dir", return_value=folder), patch.object(movie.obs, "emit"):
                 first = movie.analyze(case["id"])
                 second = movie.analyze(case["id"])
             self.assertEqual(first, second)
             self.assertEqual(first["status"], "review_required")
             self.assertGreaterEqual(len(first["events"]), 2)
             self.assertTrue(first["waveform"])
+            self.assertTrue(first["suggestions"])
+            self.assertNotIn("families", first)
+            self.assertFalse((folder / "families").exists())
             self.assertTrue((folder / "movie-analysis.json").exists())
             self.assertEqual(json.loads((folder / "movie-analysis.json").read_text())["progress"], 100)
 

@@ -151,9 +151,28 @@ class FamilyTests(unittest.TestCase):
 
     def test_deferred_family_is_visible_before_feature_film_search(self):
         family = families.create(PID, "shoe", [0.48, 0.78], defer=True)
-        self.assertEqual(family["status"], "indexing")
+        self.assertEqual(family["status"], "part_ready")
+        self.assertEqual(family["scope"], "part")
         self.assertEqual(families.list_families(PID)[0]["id"], family["id"])
+        with self.assertRaisesRegex(ValueError, "replacement SFX"):
+            families.search(PID, family["id"])
+        take_id = "d" * 12
+        take_folder = self.folder / "takes"
+        take_folder.mkdir()
+        take_path = take_folder / f"{take_id}.wav"
+        write_wav(take_path, pulse())
+        (take_folder / f"{take_id}.json").write_text(json.dumps({
+            "id": take_id, "parent_project_id": PID, "family_id": family["id"],
+            "audio_sha256": families._sha256(take_path),
+        }))
+        families.assign_take(PID, family["id"], take_id)
+        with self.assertRaisesRegex(ValueError, "Approve the fitted part"):
+            families.search(PID, family["id"])
+        approved = families.get(PID, family["id"])
+        approved["latest_render"] = {"id": "approvedpart", "human_approved": True}
+        families.atomic(families._family_path(PID, family["id"]), approved)
         ready = families.search(PID, family["id"])
+        self.assertEqual(ready["scope"], "movie")
         self.assertEqual(ready["status"], "review_required")
         self.assertTrue(ready["pending_matches"])
 
@@ -223,6 +242,16 @@ class FamilyTests(unittest.TestCase):
         result = media.waveform(path)
         self.assertEqual(result["channels"], 2)
         self.assertTrue(result["peaks"])
+
+    def test_waveform_reads_only_requested_resolution_and_range(self):
+        from orpheus.domain import media
+
+        result = media.waveform(self.folder / "original.wav", bins=64, start_s=1, end_s=2)
+        self.assertEqual((result["start_s"], result["end_s"]), (1, 2))
+        self.assertLessEqual(len(result["peaks"]), 64)
+        self.assertAlmostEqual(result["bin_duration_s"], 1 / len(result["peaks"]), places=6)
+        with self.assertRaisesRegex(ValueError, "inside"):
+            media.waveform(self.folder / "original.wav", start_s=3, end_s=2)
 
     def test_render_uses_assigned_take_and_preserves_picture(self):
         families.ff(

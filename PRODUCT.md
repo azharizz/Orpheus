@@ -16,6 +16,7 @@ Orpheus reduces search and placement work while retaining human judgment over me
 
 - Localhost application, one user, one active background job.
 - Two pages: cinematic landing/project entry and the editing workspace.
+- Two connected workspace scales: bounded Part detail and range-aware Full Movie overview.
 - One complete video per project, up to 20 GiB subject to free disk.
 - Full-duration source preservation, browser preview, mono analysis copy, and mono/stereo working mix.
 - Multiple independent sound families per project.
@@ -29,12 +30,12 @@ Cloud accounts, collaboration, cross-project learning, reusable sound libraries,
 ## End-to-end workflow
 
 1. **Import video.** Stream bytes to disk, validate media, check free space, preserve the untouched upload, and prepare full-duration working media.
-2. **Build index.** Compute the selected compact acoustic fingerprints in bounded batches. Resume an interrupted cache when its media and configuration hash still match.
-3. **Mark example.** The creator sets a start and end range on the timeline. Orpheus refines a local anchor, but the range remains human-confirmed.
-4. **Review matches.** Rank candidates by similarity to accepted examples and away from rejected examples. Collapse overlapping windows. Save accept/reject decisions atomically, then rescore.
-5. **Perform replacement.** Record with the browser microphone or upload audio. Save provenance, duration, clock uncertainty, hash, and measured profile against the selected family.
-6. **Fit and render.** Render a deterministic family baseline, then let the agent improve crop, timing, and gain inside accepted ranges. Grafana MCP history is required before rendering and exact-candidate evidence is required before selection.
-7. **Audition and decide.** Compare original and rendered audio against the same picture. Persist approval or rejection against the exact audio hash. Revisions require a new candidate and review.
+2. **Inspect one Part.** Open a stable 5–60 second window, listen at exact picture time, and treat automatic contact/noise findings only as navigation evidence.
+3. **Mark and perform.** Confirm one audible range, name its family, then record or upload a family-scoped replacement. Orpheus refines the local anchor, but the range remains human-confirmed.
+4. **Fit the Part.** Render a deterministic baseline or explicitly authorize the agent to improve crop, timing, and gain inside the confirmed Part. Grafana MCP history is required before paid rendering and exact-candidate evidence is required before selection.
+5. **Audition and approve.** Compare original and rendered audio against the same picture. Persist approval or rejection against the exact audio hash. Revisions require a new candidate and review.
+6. **Search Full Movie.** Only an approved Part becomes a query-by-example template. Build or resume compact fingerprints, rank candidates by similarity to accepted examples and away from rejected examples, and review matches in batches.
+7. **Render accepted ranges.** Collapse overlaps, apply only accepted decisions, and keep every pending, rejected, unclassified, or untouched range unchanged.
 
 No import, match, or review action starts paid inference. No similarity result edits audio without an accepted decision.
 

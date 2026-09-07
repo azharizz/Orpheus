@@ -36,20 +36,18 @@ class EvidenceChecks(unittest.TestCase):
             o.emit(pid, "selection", {"decision": "needs_human_review"})
             o.emit(pid, "tool_result", {"name": "render_arrangement", "response": {"status": "ok"}})
             o.emit(pid, "session_saved", {}, timestamp=1012.5)
-            o.emit(pid, "movie_analysis", {"status": "review_required", "measurements": {"progress": 100, "events": 42, "families": 3, "noise_regions": 2, "duration_s": 1800}})
-            o.emit(pid, "movie_agent_started", {}, timestamp=2000)
-            o.emit(pid, "movie_agent_finished", {"status": "review_required"}, timestamp=2008)
+            o.emit(pid, "movie_analysis", {"status": "review_required", "measurements": {"progress": 100, "events": 42, "suggestions": 3, "noise_regions": 2, "duration_s": 1800}})
+            o.emit(pid, "family_movie_search", {"family_id": "footsteps", "matches": 20})
             metrics = o.metrics_text()
             self.assertIn(f'orpheus_baseline_integrated_lufs{{project_id="{pid}"}} -26.2', metrics)
             self.assertIn(f'orpheus_candidate_integrated_lufs{{project_id="{pid}"}} -28.4', metrics)
             self.assertIn(f'orpheus_project_candidate_state{{project_id="{pid}"}} 1', metrics)
             self.assertIn(f'orpheus_project_review_state{{project_id="{pid}"}} 0', metrics)
             self.assertIn(f'orpheus_project_run_state{{project_id="{pid}"}} 1', metrics)
-            self.assertIn(f'orpheus_project_run_duration_seconds{{project_id="{pid}"}} 8', metrics)
             self.assertIn(f'orpheus_project_tool_events_total{{project_id="{pid}",tool="render_arrangement",outcome="completed"}} 1', metrics)
             self.assertIn(f'orpheus_movie_progress{{project_id="{pid}"}} 100', metrics)
             self.assertIn(f'orpheus_movie_events{{project_id="{pid}"}} 42', metrics)
-            self.assertIn(f'orpheus_movie_agent_state{{project_id="{pid}"}} 1', metrics)
+            self.assertIn(f'orpheus_movie_suggestions{{project_id="{pid}"}} 3', metrics)
 
     def test_redaction_idempotence_outage_and_signal(self):
         with (

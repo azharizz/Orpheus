@@ -141,8 +141,10 @@ export async function loadTakes(pid) {
   }
 }
 const pending = new Set();
-export async function loadWave(pid, role, cid = "") {
-  const key = [pid, role, cid].join(":");
+export const waveKey = (pid, role, cid = "", start = 0, end = "", bins = 600) =>
+  [pid, role, cid, start, end, bins].join(":");
+export async function loadWave(pid, role, cid = "", start = 0, end = "", bins = 600) {
+  const key = waveKey(pid, role, cid, start, end, bins);
   if (state.waveforms[key] || pending.has(key)) return;
   pending.add(key);
   try {
@@ -152,6 +154,9 @@ export async function loadWave(pid, role, cid = "") {
           project_id: pid,
           role,
           ...(cid ? { candidate_id: cid } : {}),
+          start_s: String(start),
+          ...(end !== "" ? { end_s: String(end) } : {}),
+          bins: String(bins),
         }),
     );
     update({ waveforms: { ...state.waveforms, [key]: data } });

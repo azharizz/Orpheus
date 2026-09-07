@@ -89,7 +89,6 @@ def _band_matrix(fft_samples):
             matrix[selected, band] = 1 / np.sum(selected)
     return matrix
 
-
 def _fingerprints(windows):
     """Return deterministic amplitude-invariant fingerprints for PCM windows."""
     windows = np.asarray(windows, dtype=np.float32)
@@ -111,12 +110,10 @@ def _fingerprints(windows):
     norms = np.linalg.norm(features, axis=1, keepdims=True)
     return features / np.maximum(norms, 1e-8)
 
-
 def _window_count(frame_count):
     window = round(WINDOW_S * RATE)
     hop = round(HOP_S * RATE)
     return max(1, math.ceil(max(0, frame_count - window) / hop) + 1)
-
 
 def _sha256(path):
     digest = hashlib.sha256()
@@ -125,17 +122,14 @@ def _sha256(path):
             digest.update(block)
     return digest.hexdigest()
 
-
 def _index_folder(pid):
     folder = project_dir(pid) / "similarity"
     folder.mkdir(exist_ok=True)
     return folder
 
-
 def _index_paths(pid):
     folder = _index_folder(pid)
     return folder / "index.json", folder / "features.npy", folder / "energy.npy"
-
 
 def index_status(pid):
     metadata, _, _ = _index_paths(pid)
@@ -143,7 +137,6 @@ def index_status(pid):
         return {"schema": INDEX_SCHEMA, "status": "absent", "completed_windows": 0}
     state = json.loads(metadata.read_text())
     return {**state, "total_windows": state.get("window_count")}
-
 
 def build_index(pid):
     """Build or resume the bounded on-disk fingerprint index for one project."""
@@ -227,12 +220,10 @@ def build_index(pid):
             atomic(metadata_path, state)
         raise
 
-
 def _family_folder(pid):
     folder = project_dir(pid) / "families"
     folder.mkdir(exist_ok=True)
     return folder
-
 
 def _family_path(pid, family_id):
     if not isinstance(family_id, str) or not __import__("re").fullmatch(
@@ -241,19 +232,16 @@ def _family_path(pid, family_id):
         raise ValueError("Invalid sound family ID")
     return _family_folder(pid) / f"{family_id}.json"
 
-
 def list_families(pid):
     return [
         json.loads(path.read_text()) for path in sorted(_family_folder(pid).glob("*.json"))
     ]
-
 
 def _load_family(pid, family_id):
     doc = json.loads(_family_path(pid, family_id).read_text())
     if doc.get("schema") != FAMILY_SCHEMA or doc.get("project_id") != pid:
         raise ValueError("Invalid sound family")
     return doc
-
 
 get = _load_family
 def _range(value, duration, label="range"):
@@ -264,7 +252,6 @@ def _range(value, duration, label="range"):
         raise ValueError(f"{label} outside media")
     return [start, end]
 
-
 def _refine(audio, bounds):
     start, end = bounds
     samples = _mono(
@@ -273,7 +260,6 @@ def _refine(audio, bounds):
     if not len(samples):
         return (start + end) / 2
     return start + int(np.argmax(np.abs(samples))) / RATE
-
 
 def _feature_at(audio, bounds):
     anchor = _refine(audio, bounds)
@@ -287,10 +273,8 @@ def _feature_at(audio, bounds):
         samples = np.pad(samples, (0, round(WINDOW_S * RATE) - len(samples)))
     return _fingerprints(samples)[0], anchor
 
-
 def _match_id(cache_key, index):
     return hashlib.sha256(f"{cache_key}:{index}".encode()).hexdigest()[:12]
-
 
 def _rank(case, index, accepted, rejected, excluded):
     vectors = np.load(_index_paths(case["id"])[1], mmap_mode="r")
@@ -347,7 +331,6 @@ def _rank(case, index, accepted, rejected, excluded):
             break
     return results
 
-
 def create(pid, name, seed_range_s, *, defer=False):
     case = load(pid)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
@@ -379,7 +362,8 @@ def create(pid, name, seed_range_s, *, defer=False):
         "pending_matches": [],
         "replacement_take_id": None,
         "search_version": 1,
-        "status": "indexing",
+        "status": "part_ready" if defer else "indexing",
+        "scope": "part" if defer else "movie",
         "created_at": time.time(),
         "index_cache_key": None,
         "warning": "Similarity scores rank acoustic resemblance; they are not probabilities or semantic labels.",
@@ -393,10 +377,16 @@ def create(pid, name, seed_range_s, *, defer=False):
     })
     return doc if defer else search(pid, family_id)
 
-
 def search(pid, family_id):
     """Build/resume the index and refresh one family's pending review queue."""
     doc = _load_family(pid, family_id)
+    if doc.get("scope") == "part":
+        if not doc.get("replacement_take_id"):
+            raise ValueError("Assign a replacement SFX before searching the full movie")
+        if not doc.get("latest_render", {}).get("human_approved"):
+            raise ValueError("Approve the fitted part before searching the full movie")
+    doc["status"] = "searching"
+    atomic(_family_path(pid, family_id), doc)
     try:
         index = build_index(pid)
         excluded = {
@@ -406,16 +396,24 @@ def search(pid, family_id):
             load(pid), index, doc["accepted_ranges"], doc["rejected_ranges"], excluded
         )
         doc["index_cache_key"] = index["cache_key"]
+        doc["scope"] = "movie"
+        doc["propagated_at"] = time.time()
         doc["status"] = "review_required" if doc["pending_matches"] else "ready"
         doc["updated_at"] = time.time()
         atomic(_family_path(pid, family_id), doc)
+        obs.emit(pid, "family_movie_search", {
+            "family_id": family_id,
+            "status": doc["status"],
+            "start_s": doc["seed_range_s"][0],
+            "end_s": doc["seed_range_s"][1],
+            "measurements": {"pending_matches": len(doc["pending_matches"])},
+        })
         return doc
     except Exception:
         doc["status"] = "indexing_failed"
         doc["updated_at"] = time.time()
         atomic(_family_path(pid, family_id), doc)
         raise
-
 
 def review(pid, family_id, accepted_ids, rejected_ids):
     doc = _load_family(pid, family_id)
@@ -456,7 +454,6 @@ def review(pid, family_id, accepted_ids, rejected_ids):
     }})
     return doc
 
-
 def assign_take(pid, family_id, take_id):
     from . import takes
 
@@ -466,7 +463,6 @@ def assign_take(pid, family_id, take_id):
     doc["updated_at"] = time.time()
     atomic(_family_path(pid, family_id), doc)
     return doc
-
 
 def _possible_dialogue_or_music(samples):
     mono = _mono(samples)
@@ -481,7 +477,6 @@ def _possible_dialogue_or_music(samples):
     voice = float(np.sum(spectrum[(frequencies >= 150) & (frequencies <= 4_000)]))
     crest = media.db(np.max(np.abs(mono))) - media.db(rms)
     return total > 0 and voice / total > 0.65 and crest < 18
-
 
 def mix_selective(original, replacement, matches, *, duck_db=-12, ramp_s=0.025, replacement_gain_db=0):
     """Duck only accepted windows and overlay one peak-aligned replacement."""
@@ -555,12 +550,10 @@ def mix_selective(original, replacement, matches, *, duck_db=-12, ramp_s=0.025, 
         "warning": "Dialogue/music overlap is a conservative spectral heuristic, not source separation.",
     }
 
-
 def _read_pcm(path):
     frames, channels = _wav_shape(path)
     samples = _read_range(path, 0, frames)
     return samples.reshape(-1, channels) if channels == 2 else samples
-
 
 def _pcm_chunks(path):
     frames, channels = _wav_shape(path)
@@ -573,7 +566,6 @@ def _pcm_chunks(path):
                 values = values.reshape(-1, 2)
             yield offset, values
             offset += len(values)
-
 
 def _stream_events(original_path, replacement, matches, duck_db, ramp_s, replacement_gain_db):
     frames, _ = _wav_shape(original_path)
@@ -613,7 +605,6 @@ def _stream_events(original_path, replacement, matches, duck_db, ramp_s, replace
             dialogue.append(item["id"])
     return part, events, dialogue
 
-
 def _chunk_components(original, offset, part, events, duck_db):
     stop = offset + len(original)
     envelope = np.ones(len(original), dtype=np.float32)
@@ -650,7 +641,6 @@ def _chunk_components(original, offset, part, events, duck_db):
         else:
             layer[a:b] += placed
     return original * (envelope[:, None] if original.ndim == 2 else envelope), layer
-
 
 def _write_selective_wav(
     original_path,
@@ -695,7 +685,6 @@ def _write_selective_wav(
         "possible_dialogue_or_music_overlap_ids": dialogue,
         "warning": "Dialogue/music overlap is a conservative spectral heuristic, not source separation.",
     }
-
 
 def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
            ramp_s=0.025, replacement_gain_db=0):

@@ -127,26 +127,6 @@ def start(project_id, family_id, feedback):
             )
 
 
-def start_movie(project_id, feedback):
-    global PROCESS
-    case = projects.load(project_id)
-    if case.get("status") in ("preparing", "preparation_failed"):
-        raise ValueError("Movie media must finish preparation before the agent runs")
-    if not isinstance(feedback, str) or not 1 <= len(feedback) <= config.MAX_FEEDBACK_CHARS:
-        raise ValueError("Feedback must be 1 to 500 characters.")
-    with LOCK:
-        if busy():
-            raise BlockingIOError()
-        with (projects.project_dir(project_id) / "movie-worker.log").open("ab") as output:
-            PROCESS = subprocess.Popen(
-                [sys.executable, "-m", "orpheus.server.movie_worker", project_id, "--feedback", feedback],
-                cwd=config.ROOT,
-                stdout=output,
-                stderr=output,
-                start_new_session=True,
-            )
-
-
 def project_list():
     rows, errors = [], []
     for path in sorted(
@@ -304,7 +284,10 @@ class Handler(LocalHandler):
             path = projects.project_dir(case["id"]) / (cid + ".wav")
         else:
             path = case["original_path"]
-        self.send_json(media.waveform(path))
+        start_s = float(query.get("start_s", [0])[0])
+        end_s = query.get("end_s", [None])[0]
+        bins = int(query.get("bins", [600])[0])
+        self.send_json(media.waveform(path, bins, start_s, None if end_s is None else float(end_s)))
 
     def do_POST(self):
         try:
@@ -397,9 +380,9 @@ class Handler(LocalHandler):
             "/api/run",
             "/api/review",
             "/api/families",
+            "/api/families/search",
             "/api/families/review",
             "/api/families/render",
-            "/api/movie/run",
             "/api/movie/analyze",
             "/api/movie/review",
             "/api/movie/render",
@@ -438,13 +421,6 @@ class Handler(LocalHandler):
                 },
                 202,
             )
-        elif route == "/api/movie/run":
-            if data.get("consent") is not True:
-                raise RequestError("Confirm the capped paid coordinator run before starting it.", 409)
-            if not obs.config():
-                raise RequestError("Start the local Grafana stack before the movie agent. Grafana evidence is mandatory.", 409)
-            start_movie(data["project_id"], data.get("feedback", "Coordinate this movie from deterministic and Grafana evidence; preserve uncertain sounds for review."))
-            self.send_json({"started": True, "project_id": data["project_id"]}, 202)
         elif route == "/api/movie/analyze":
             with mutation():
                 result = movie.analyze(data["project_id"], resume=data.get("resume", True))
@@ -471,8 +447,13 @@ class Handler(LocalHandler):
         elif route == "/api/families":
             with mutation():
                 result = families.create(
-                    data["project_id"], data["name"], data["seed_range_s"]
+                    data["project_id"], data["name"], data["seed_range_s"],
+                    defer=data.get("defer") is True,
                 )
+            self.send_json(result, 201)
+        elif route == "/api/families/search":
+            with mutation():
+                result = families.search(data["project_id"], data["family_id"])
             self.send_json(result, 201)
         elif route == "/api/families/review":
             decisions = data.get("decisions")

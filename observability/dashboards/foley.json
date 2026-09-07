@@ -2,7 +2,7 @@
   "uid": "orpheus",
   "title": "Agentic Foley Control Room",
   "schemaVersion": 40,
-  "version": 7,
+  "version": 8,
   "refresh": "5s",
   "time": {
     "from": "now-14d",
@@ -414,7 +414,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(orpheus_project_events_total{project_id=~\"$project\",event=~\"grafana_investigation|movie_grafana_evidence\"})",
+          "expr": "sum(orpheus_project_events_total{project_id=~\"$project\",event=\"grafana_query\"})",
           "datasource": {
             "type": "prometheus",
             "uid": "orpheus-prometheus"
@@ -947,7 +947,7 @@
                   "color": "#FF8790"
                 },
                 "0": {
-                  "text": "RUNNING",
+                  "text": "INCOMPLETE",
                   "color": "#EAC17C"
                 },
                 "1": {
@@ -1365,7 +1365,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=\"grafana_investigation\"",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"grafana_query|grafana_investigation\"",
           "datasource": {
             "type": "loki",
             "uid": "orpheus-loki"
@@ -1525,7 +1525,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(orpheus_project_events_total{project_id=~\"$project\",event=~\"grafana_investigation|movie_grafana_evidence\"}) > bool 0)",
+          "expr": "clamp_max(orpheus_project_events_total{project_id=~\"$project\",event=\"grafana_query\"}, 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "orpheus-prometheus"
@@ -1909,7 +1909,7 @@
     },
     {
       "id": 26,
-      "title": "Movie agent",
+      "title": "Full-movie searches",
       "type": "stat",
       "gridPos": {
         "x": 0,
@@ -1917,7 +1917,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "The movie coordinator delegates only reviewed families with assigned SFX to the paid family agent.",
+      "description": "Approved part families propagated through deterministic full-movie query-by-example search.",
       "datasource": {
         "type": "datasource",
         "uid": "-- Mixed --"
@@ -1925,7 +1925,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "orpheus_movie_agent_state{project_id=~\"$project\"}",
+          "expr": "sum(orpheus_project_events_total{project_id=~\"$project\",event=\"family_movie_search\"})",
           "datasource": {
             "type": "prometheus",
             "uid": "orpheus-prometheus"
@@ -1951,37 +1951,11 @@
       },
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "-1": {
-                  "text": "NOT RUN",
-                  "color": "#EAC17C"
-                },
-                "0": {
-                  "text": "RUNNING",
-                  "color": "#EAC17C"
-                },
-                "1": {
-                  "text": "REVIEW",
-                  "color": "#9DCFAD"
-                }
-              }
-            }
-          ],
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#EAC17C",
-                "value": null
-              }
-            ]
-          }
+          "decimals": 0
         },
         "overrides": []
       }
@@ -2152,8 +2126,8 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Open this movie position",
-                    "url": "http://127.0.0.1:8766/workspace?project=${project}&time=${__data.fields.time_s}"
+                    "title": "Inspect this part",
+                    "url": "http://127.0.0.1:8766/workspace?project=${project}&view=part&time=${__data.fields[\"time_s\"]}"
                   }
                 ]
               }
@@ -2224,7 +2198,7 @@
         "w": 8,
         "h": 9
       },
-      "description": "Family, noise and human-review decisions with exact workspace deep links.",
+      "description": "Movie cues, approved-family searches and human decisions with exact Part links.",
       "datasource": {
         "type": "datasource",
         "uid": "-- Mixed --"
@@ -2232,7 +2206,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"movie_analysis|movie_noise|movie_review|movie_agent_decision\"",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"movie_analysis|movie_noise|movie_review|family_movie_search|human_review\"",
           "datasource": {
             "type": "loki",
             "uid": "orpheus-loki"
@@ -2264,8 +2238,8 @@
           },
           "links": [
             {
-              "title": "Open in Orpheus",
-              "url": "http://127.0.0.1:8766/workspace?project=${project}&time=${__data.fields.time_s}&family=${__data.fields.family_id}"
+              "title": "Inspect in Part",
+              "url": "http://127.0.0.1:8766/workspace?project=${project}&view=part&time=${__data.fields[\"start_s\"]}&family=${__data.fields[\"family_id\"]}"
             }
           ]
         },

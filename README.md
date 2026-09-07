@@ -5,11 +5,11 @@ Orpheus is a local, single-user Foley workbench for finding repeated sound event
 ## Workflow
 
 1. Import one short video or full film. Orpheus preserves the source, creates a browser preview, extracts analysis audio, and builds a cached local sound index.
-2. Run the movie coordinator once. It resumes local signal analysis, proposes acoustic families and noise review, queries Grafana history, and samples representative frames.
-3. Review proposed family matches and noise flags. Unknown sounds stay untouched.
-4. Record or upload one replacement take for each family that should change.
-5. Authorize the paid coordinator to delegate reviewed families to the existing bounded AI fitting agent, or build a deterministic reviewed draft locally.
-6. Compare the original and replacement, then approve or reject the exact rendered candidate.
+2. Open a bounded **Part**, listen to one exact occurrence, name its sound family, and record or upload its replacement SFX.
+3. Render a deterministic part preview or explicitly authorize the family agent. The paid agent must read Grafana history before fitting crop, timing, and gain inside the confirmed part; provider failover remains available.
+4. Compare the original and replacement against the same picture, then approve or reject that exact part render.
+5. After approval, search the cached index across **Full Movie**. Review the ranked matches in batches; unclassified contact suggestions and possible noise only navigate back to a Part and never edit audio.
+6. Render accepted ranges. Every rejected, pending, unclassified, and untouched range keeps its original PCM.
 
 Accepted windows receive bounded gain ramps and the fitted replacement. Every unaccepted part of the soundtrack stays unchanged. Final masters reuse the untouched source video stream.
 
@@ -55,7 +55,7 @@ The output lives at `data/fixtures/synthetic-30-minute/` and includes the movie,
 
 - `orpheus/domain/`: movie analysis, media, sound-family, take, render, and review logic.
 - `orpheus/agent/`: bounded ADK fitting workflow and provider failover.
-- `orpheus/server/`: loopback API, streamed uploads, and one background worker.
+- `orpheus/server/`: loopback API, streamed uploads, and the family fitting worker.
 - `orpheus/ops/`: redacted telemetry, benchmark CLI, and Grafana helpers.
 - `frontend/src/`: two-page React interface using an external store and callback refs; no `useEffect`.
 - `observability/`: isolated Grafana, Loki, Tempo, and Prometheus assets.

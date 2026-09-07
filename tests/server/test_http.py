@@ -69,7 +69,7 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.json()["storage"], "local")
         self.assertNotIn("key", response.text.lower())
 
-    def test_movie_routes_require_paid_consent_and_return_review_state(self):
+    def test_movie_routes_are_deterministic_and_return_review_state(self):
         source = load_case()
         doc = projects.create(source["video_path"])
         pid = doc["id"]
@@ -80,11 +80,16 @@ class HttpChecks(unittest.TestCase):
             response = self.client.post("/api/movie/analyze", json={"project_id": pid})
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["status"], "review_required")
-        self.assertEqual(self.client.post("/api/movie/run", json={"project_id": pid}).status_code, 409)
-        with patch.object(web.obs, "config", return_value={"enabled": True}), patch.object(web, "start_movie") as start_movie:
-            response = self.client.post("/api/movie/run", json={"project_id": pid, "consent": True})
-        self.assertEqual(response.status_code, 202, response.text)
-        start_movie.assert_called_once()
+        self.assertEqual(self.client.post("/api/movie/run", json={"project_id": pid}).status_code, 404)
+
+    def test_family_search_route_delegates_to_guarded_domain_action(self):
+        with patch.object(families, "search", return_value={"status": "review_required"}) as search:
+            response = self.client.post(
+                "/api/families/search",
+                json={"project_id": "1234567890abcdef", "family_id": "footsteps"},
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        search.assert_called_once_with("1234567890abcdef", "footsteps")
 
     def test_prepare_take_and_seek_without_inference(self):
         case = load_case()
@@ -123,6 +128,13 @@ class HttpChecks(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200, response.text)
             self.assertTrue(response.json()["peaks"])
+            response = self.client.get(
+                "/api/waveform",
+                params={"project_id": pid, "role": "original", "start_s": 1, "end_s": 2, "bins": 32},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["start_s"], 1)
+            self.assertLessEqual(len(response.json()["peaks"]), 32)
             for _ in range(100):
                 status = self.client.get(
                     "/api/families", params={"project_id": pid}

@@ -21,23 +21,41 @@ def read_audio(path):
         )
 
 
-def waveform(path, bins=600):
-    """Return bounded peak buckets without loading a feature-length WAV."""
+def waveform(path, bins=600, start_s=0, end_s=None):
+    """Return bounded peak buckets for one visible PCM range."""
+    if isinstance(bins, bool) or not isinstance(bins, int) or not 16 <= bins <= 2400:
+        raise ValueError("Waveform bins must be between 16 and 2400")
     with wave.open(str(path), "rb") as stream:
         channels = stream.getnchannels()
         if stream.getframerate() != RATE or channels not in (1, 2) or stream.getsampwidth() != 2:
             raise ValueError("Expected 48kHz mono or stereo PCM16 WAV")
-        count = stream.getnframes()
+        total = stream.getnframes()
+        duration = total / RATE
+        start_s = float(start_s)
+        end_s = duration if end_s is None else float(end_s)
+        if not math.isfinite(start_s) or not math.isfinite(end_s) or not 0 <= start_s < end_s <= duration:
+            raise ValueError("Waveform range must be inside the prepared media")
+        first = min(total, round(start_s * RATE))
+        last = min(total, round(end_s * RATE))
+        count = max(1, last - first)
+        stream.setpos(first)
         width = max(1, math.ceil(count / min(bins, count)))
         peaks = []
         while len(peaks) < bins:
-            raw = stream.readframes(width)
+            raw = stream.readframes(min(width, last - stream.tell()))
             if not raw:
                 break
             samples = np.frombuffer(raw, dtype="<i2")
             peaks.append(round(float(np.max(np.abs(samples.astype(float)))) / 32768, 5))
-    return {"duration_s": count / RATE, "sample_rate": RATE,
-            "channels": channels, "peaks": peaks}
+    return {
+        "duration_s": duration,
+        "start_s": first / RATE,
+        "end_s": last / RATE,
+        "bin_duration_s": count / RATE / len(peaks),
+        "sample_rate": RATE,
+        "channels": channels,
+        "peaks": peaks,
+    }
 
 
 def db(x):

@@ -233,7 +233,7 @@ def dashboard():
     )
     add(
         "Grafana evidence reads", "stat", {"x": 20, "y": 0, "w": 4, "h": 4},
-        [target('sum(orpheus_project_events_total' + project[:-1] + ',event=~"grafana_investigation|movie_grafana_evidence"})', instant=True)],
+        [target('sum(orpheus_project_events_total' + project[:-1] + ',event="grafana_query"})', instant=True)],
         options=stat_options,
         field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
     )
@@ -337,7 +337,7 @@ def dashboard():
             "color": {"mode": "thresholds"},
             "mappings": [{"type": "value", "options": {
                 "-1": {"text": "FAILED", "color": rose},
-                "0": {"text": "RUNNING", "color": amber},
+                "0": {"text": "INCOMPLETE", "color": amber},
                 "1": {"text": "COMPLETED", "color": green},
             }}],
             "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
@@ -397,7 +397,7 @@ def dashboard():
     )
     add(
         "Grafana MCP evidence", "table", {"x": 0, "y": 36, "w": 10, "h": 7},
-        [target(base + ' | event="grafana_investigation"', datasource=loki)],
+        [target(base + ' | event=~"grafana_query|grafana_investigation"', datasource=loki)],
         description="Receipts prove that the agent queried project history before rendering and candidate evidence after measurement.",
         options=table_options,
         transformations=[
@@ -419,7 +419,7 @@ def dashboard():
     )
     add(
         "Grafana MCP", "stat", {"x": 0, "y": 43, "w": 4, "h": 4},
-        [target('(sum(orpheus_project_events_total' + project[:-1] + ',event=~"grafana_investigation|movie_grafana_evidence"}) > bool 0)', instant=True)], options=stat_options,
+        [target('clamp_max(orpheus_project_events_total' + project[:-1] + ',event="grafana_query"}, 1)', instant=True)], options=stat_options,
         description="Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
         field={"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}},
     )
@@ -452,10 +452,10 @@ def dashboard():
     )
 
     add(
-        "Movie agent", "stat", {"x": 0, "y": 47, "w": 4, "h": 4},
-        [target("orpheus_movie_agent_state" + project, instant=True)], options=stat_options,
-        description="The movie coordinator delegates only reviewed families with assigned SFX to the paid family agent.",
-        field={"mappings": [{"type": "value", "options": {"-1": {"text": "NOT RUN", "color": amber}, "0": {"text": "RUNNING", "color": amber}, "1": {"text": "REVIEW", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]}},
+        "Full-movie searches", "stat", {"x": 0, "y": 47, "w": 4, "h": 4},
+        [target('sum(orpheus_project_events_total' + project[:-1] + ',event="family_movie_search"})', instant=True)], options=stat_options,
+        description="Approved part families propagated through deterministic full-movie query-by-example search.",
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
     )
     add(
         "Movie analysis", "gauge", {"x": 4, "y": 47, "w": 4, "h": 4},
@@ -483,14 +483,14 @@ def dashboard():
             {"id": "sortBy", "options": {"fields": [{"field": "time_s", "desc": False}]}},
         ],
         field={"unit": "dB", "min": -80, "max": 0},
-        overrides=[{"matcher": {"id": "byName", "options": "rms_dbfs"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}, {"id": "links", "value": [{"title": "Open this movie position", "url": f"{app}/workspace?project=${{project}}&time=${{__data.fields.time_s}}"}]}]}],
+        overrides=[{"matcher": {"id": "byName", "options": "rms_dbfs"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}, {"id": "links", "value": [{"title": "Inspect this part", "url": f"{app}/workspace?project=${{project}}&view=part&time=${{__data.fields[\"time_s\"]}}"}]}]}],
     )
     add(
         "Movie findings", "table", {"x": 16, "y": 55, "w": 8, "h": 9},
-        [target(base + ' | event=~"movie_analysis|movie_noise|movie_review|movie_agent_decision"', datasource=loki)],
-        description="Family, noise and human-review decisions with exact workspace deep links.", options=table_options,
+        [target(base + ' | event=~"movie_analysis|movie_noise|movie_review|family_movie_search|human_review"', datasource=loki)],
+        description="Movie cues, approved-family searches and human decisions with exact Part links.", options=table_options,
         transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}}, {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "time_s", "start_s", "end_s", "family_id", "decision", "status"]}}}],
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "links": [{"title": "Open in Orpheus", "url": f"{app}/workspace?project=${{project}}&time=${{__data.fields.time_s}}&family=${{__data.fields.family_id}}"}]},
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "links": [{"title": "Inspect in Part", "url": f"{app}/workspace?project=${{project}}&view=part&time=${{__data.fields[\"start_s\"]}}&family=${{__data.fields[\"family_id\"]}}"}]},
     )
 
     raw_children = []
@@ -520,7 +520,7 @@ def dashboard():
         "uid": "orpheus",
         "title": "Agentic Foley Control Room",
         "schemaVersion": 40,
-        "version": 7,
+        "version": 8,
         "refresh": "5s",
         "time": {"from": "now-14d", "to": "now"},
         "tags": ["orpheus", "agent", "foley", "local"],

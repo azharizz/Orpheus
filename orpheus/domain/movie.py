@@ -14,7 +14,7 @@ from ..config import SAMPLE_RATE as RATE
 from ..ops import observability as obs
 from . import families, media, projects, takes
 
-SCHEMA = "movie-analysis.v1"
+SCHEMA = "movie-analysis.v2"
 SCAN_S = 0.1
 MAX_WAVE_BUCKETS = 2400
 
@@ -27,7 +27,9 @@ def status(pid):
     projects.load(pid)
     path = _path(pid)
     if path.exists():
-        return json.loads(path.read_text())
+        saved = json.loads(path.read_text())
+        if saved.get("schema") == SCHEMA:
+            return saved
     return {
         "schema": SCHEMA,
         "project_id": pid,
@@ -37,7 +39,7 @@ def status(pid):
         "events": [],
         "noise_regions": [],
         "review_queue": [],
-        "families": [],
+        "suggestions": [],
     }
 
 
@@ -127,33 +129,29 @@ def _waveform(rows, seconds):
     ]
 
 
-def _propose_families(pid, events):
-    existing = families.list_families(pid)
-    automatic = {item.get("proposal_band"): item for item in existing if item.get("origin") == "movie_agent"}
+def _suggestions(events):
+    """Offer exact navigation cues without claiming semantic sound families."""
     proposed = []
-    labels = {"low": "Body and low impacts", "mid": "Footsteps and contact", "bright": "Cloth and bright props"}
+    labels = {
+        "low": "Unclassified low-frequency contacts",
+        "mid": "Unclassified mid-frequency contacts",
+        "bright": "Unclassified bright contacts",
+    }
     for band in ("low", "mid", "bright"):
         group = [event for event in events if event["acoustic_band"] == band]
         if len(group) < 2:
             continue
-        family = automatic.get(band)
-        if family is None:
-            seed = max(group, key=lambda item: item["peak_dbfs"])
-            seed_range = [max(0, seed["anchor_s"] - .08), min(projects.load(pid)["seconds"], seed["anchor_s"] + .56)]
-            family = families.create(pid, labels[band], seed_range, defer=True)
-            family.update(origin="movie_agent", proposal_band=band)
-            projects.atomic(projects.project_dir(pid) / "families" / f"{family['id']}.json", family)
-            try:
-                family = families.search(pid, family["id"])
-            except Exception:
-                family = families.get(pid, family["id"])
+        seed = max(group, key=lambda item: item["peak_dbfs"])
         proposed.append({
-            "id": family["id"],
-            "name": family["name"],
+            "id": uuid.uuid5(uuid.NAMESPACE_URL, f"suggestion:{band}:{seed['id']}").hex[:12],
+            "kind": "contact_suggestion",
+            "title": labels[band],
             "band": band,
             "event_count": len(group),
-            "status": family["status"],
-            "replacement_take_id": family.get("replacement_take_id"),
+            "time_s": seed["anchor_s"],
+            "range_s": seed["range_s"],
+            "status": "unreviewed",
+            "reason": "Energy and spectral-shape cue only. Open this part, listen, and name a family yourself.",
         })
     return proposed
 
@@ -164,7 +162,7 @@ def analyze(pid, *, resume=True):
     if case.get("status") in ("preparing", "preparation_failed"):
         raise ValueError("Movie media must finish preparation before analysis")
     prior = status(pid)
-    if resume and prior.get("status") in ("review_required", "ready"):
+    if resume and prior.get("schema") == SCHEMA and prior.get("status") in ("review_required", "ready"):
         return prior
     bucket_path = projects.project_dir(pid) / "movie-buckets.jsonl"
     source_hash = case.get("prepared_hashes", {}).get("original.wav")
@@ -191,8 +189,8 @@ def analyze(pid, *, resume=True):
         "events": [],
         "noise_regions": [],
         "review_queue": [],
-        "families": [],
-        "agent": {"role": "coordinator", "stage": "deterministic_evidence"},
+        "suggestions": [],
+        "analysis": {"kind": "deterministic_offline", "stage": "signal_scan"},
     }
     _save(pid, doc)
     with wave.open(str(case["original_path"]), "rb") as source:
@@ -221,19 +219,19 @@ def analyze(pid, *, resume=True):
     doc["waveform"] = _waveform(rows, case["seconds"])
     doc["events"], doc["noise_regions"] = _events(rows, case["seconds"])
     doc["progress"] = 75
-    doc["agent"]["stage"] = "family_proposals"
+    doc["analysis"]["stage"] = "navigation_suggestions"
     _save(pid, doc)
-    doc["families"] = _propose_families(pid, doc["events"])
+    doc["suggestions"] = _suggestions(doc["events"])
     doc["review_queue"] = [
-        *[{"id": item["id"], "kind": "family", "family_id": item["id"], "time_s": next((e["anchor_s"] for e in doc["events"] if e["acoustic_band"] == item.get("band")), 0), "title": item["name"], "status": "review_required", "reason": "Review acoustic matches and assign a replacement take."} for item in doc["families"]],
-        *[{"id": item["id"], "kind": "noise", "time_s": item["range_s"][0], "title": "Potential noise", "status": item["status"], "reason": item["warning"]} for item in doc["noise_regions"]],
+        *doc["suggestions"],
+        *[{"id": item["id"], "kind": "noise", "time_s": item["range_s"][0], "range_s": item["range_s"], "title": "Potential sustained sound", "status": item["status"], "reason": item["warning"]} for item in doc["noise_regions"]],
     ]
     doc["status"] = "review_required" if doc["review_queue"] else "ready"
     doc["progress"] = 100
-    doc["agent"]["stage"] = "awaiting_human_review" if doc["review_queue"] else "complete"
+    doc["analysis"]["stage"] = "awaiting_part_review" if doc["review_queue"] else "complete"
     doc["finished_at"] = time.time()
     _save(pid, doc)
-    obs.emit(pid, "movie_analysis", {"status": doc["status"], "measurements": {"progress": 100, "events": len(doc["events"]), "families": len(doc["families"]), "noise_regions": len(doc["noise_regions"]), "duration_s": case["seconds"]}})
+    obs.emit(pid, "movie_analysis", {"status": doc["status"], "measurements": {"progress": 100, "events": len(doc["events"]), "suggestions": len(doc["suggestions"]), "noise_regions": len(doc["noise_regions"]), "duration_s": case["seconds"]}})
     for item in doc["waveform"]:
         obs.emit(pid, "movie_signal", item)
     for item in doc["noise_regions"]:

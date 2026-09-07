@@ -481,15 +481,6 @@ def metrics_text():
             project["review"] = r
         if r["event"] == "movie_analysis":
             project["movie_analysis"] = r
-        if r["event"] == "movie_agent_started":
-            project["movie_state"] = 0
-            project["run_state"] = 0
-            project["run_started_at"] = r["observed_at"]
-            project.pop("run_finished_at", None)
-        if r["event"] == "movie_agent_finished":
-            project["movie_state"] = 1
-            project["run_state"] = 1
-            project["run_finished_at"] = r["observed_at"]
         if r["event"] == "movie_candidate":
             project["movie_candidate"] = r
     lines = ["# TYPE orpheus_events_total counter"]
@@ -536,10 +527,9 @@ def metrics_text():
             f"orpheus_project_reported_tokens_total{{{labels}}} {project['tokens']}",
             f"orpheus_project_reported_cost_usd_total{{{labels}}} {project['cost']}",
             f"orpheus_project_run_state{{{labels}}} {project['run_state']}",
-            f"orpheus_movie_agent_state{{{labels}}} {project.get('movie_state', -1)}",
         ]
         analysis = project.get("movie_analysis", {})
-        for key in ("progress", "events", "families", "noise_regions", "duration_s"):
+        for key in ("progress", "events", "suggestions", "noise_regions", "duration_s"):
             value = analysis.get(key)
             if finite(value):
                 lines.append(f"orpheus_movie_{key}{{{labels}}} {value}")

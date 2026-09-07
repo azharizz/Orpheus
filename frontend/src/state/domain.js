@@ -56,11 +56,11 @@ export function matchVolume(level, levels) {
 }
 
 export function movieLanes(movie = {}, families = [], maxMarks = 360) {
-  const familyByBand = Object.fromEntries((movie.families || []).map((item) => [item.band, item]));
   const events = movie.events || [];
   const step = Math.max(1, Math.ceil(events.length / maxMarks));
   return {
-    events: events.filter((_, index) => index % step === 0).map((item) => ({ ...item, family_id: familyByBand[item.acoustic_band]?.id })),
+    events: events.filter((_, index) => index % step === 0),
+    suggestions: movie.suggestions || [],
     noise: movie.noise_regions || [],
     accepted: families.flatMap((family) => (family.accepted_ranges || []).map((item) => ({ ...item, family_id: family.id, status: "accepted" }))),
     rejected: families.flatMap((family) => (family.rejected_ranges || []).map((item) => ({ ...item, family_id: family.id, status: "rejected" }))),
@@ -74,5 +74,22 @@ export function workspaceTarget(search = window.location.search) {
     time: Number.isFinite(at) && at >= 0 ? at : 0,
     family: params.get("family") || "",
     event: params.get("event") || "",
+    view: params.get("view") === "movie" ? "movie" : "part",
   };
+}
+
+export function partWindow(center, duration, span = 15) {
+  const width = Math.min(duration, Math.max(5, Number(span) || 15));
+  const start = Math.max(0, Math.min(duration - width, Number(center) - width / 2));
+  return [Number(start.toFixed(3)), Number((start + width).toFixed(3))];
+}
+
+export function eventDensity(events, start, end, bins = 120) {
+  const counts = Array.from({ length: bins }, () => 0);
+  const width = Math.max(end - start, Number.EPSILON);
+  for (const event of events || []) {
+    const at = Number(event.anchor_s ?? event.time_s);
+    if (at >= start && at <= end) counts[Math.min(bins - 1, Math.floor((at - start) / width * bins))] += 1;
+  }
+  return counts;
 }
