@@ -11,6 +11,7 @@ import {
   matchRange,
   pageWindow,
   movieLanes,
+  movieSpineMarkers,
   workspaceTarget,
   partWindow,
   eventDensity,
@@ -71,4 +72,21 @@ test("sound-family seeds and pending matches retain measured ranges", () => {
   };
   assert.deepEqual(pendingMatches(family).map((match) => match.id), ["m1"]);
   assert.deepEqual(matchRange(family.matches[0]), [1, 2]);
+});
+test("film spine clusters nearby active-family marks and leaves unrelated queues behind", () => {
+  const markers = movieSpineMarkers(
+    { review_queue: [{ id: "noise", time_s: 50, status: "review_required", kind: "noise" }] },
+    [{
+      id: "walk",
+      accepted_ranges: [[10, 10.2], [10.04, 10.3]],
+      pending_matches: [{ id: "pending", range_s: [80, 80.2] }],
+    }],
+    "walk",
+    100,
+    10,
+  );
+  assert.equal(markers.length, 2);
+  assert.deepEqual(markers[0].range_s, [10, 10.3]);
+  assert.equal(markers[0].count, 2);
+  assert.equal(markers[1].kind, "pending");
 });

@@ -67,6 +67,43 @@ export function movieLanes(movie = {}, families = [], maxMarks = 360) {
   };
 }
 
+function spineRange(item = {}) {
+  const range = matchRange(item) || [];
+  const start = Number(range[0] ?? item.time_s ?? item.anchor_s);
+  const end = Number(range[1]);
+  if (!Number.isFinite(start)) return null;
+  return [start, Number.isFinite(end) && end > start ? end : start + 0.08];
+}
+
+export function movieSpineMarkers(movie = {}, families = [], activeFamilyId = "", duration = 0, maxMarks = 96) {
+  const family = families.find((item) => item.id === activeFamilyId) || families[0];
+  const source = family
+    ? [
+      ...(family.accepted_ranges || []).map((item) => ({ ...(Array.isArray(item) ? { range_s: item } : item), family_id: family.id, kind: "accepted" })),
+      ...pendingMatches(family).map((item) => ({ ...item, family_id: family.id, kind: "pending" })),
+    ]
+    : (movie.review_queue || []).filter((item) => item.status === "unreviewed" || item.status === "review_required").map((item) => ({ ...item, kind: item.kind === "noise" ? "noise" : "pending" }));
+  const span = Math.max(1, Number(duration) || 1);
+  const buckets = Math.max(1, Math.min(120, Math.floor(Number(maxMarks) || 96)));
+  const grouped = new Map();
+  // ponytail: cap permanent marks; selecting a cluster opens its full local detail.
+  for (const item of source) {
+    const range = spineRange(item);
+    if (!range) continue;
+    const index = Math.min(buckets - 1, Math.max(0, Math.floor(range[0] / span * buckets)));
+    const key = `${item.kind}:${index}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.count += 1;
+      current.range_s[0] = Math.min(current.range_s[0], range[0]);
+      current.range_s[1] = Math.max(current.range_s[1], range[1]);
+      continue;
+    }
+    grouped.set(key, { ...item, id: item.id || key, range_s: range, time_s: range[0], count: 1 });
+  }
+  return [...grouped.values()].sort((a, b) => a.range_s[0] - b.range_s[0]);
+}
+
 export function workspaceTarget(search = window.location.search) {
   const params = new URLSearchParams(search);
   const at = Number(params.get("time"));

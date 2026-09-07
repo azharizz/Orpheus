@@ -66,13 +66,12 @@ The synthesis is visible in the large photographic ORPHEUS shutters, framed imag
 
 - Use the same header treatment as the landing page. Grain repeats through the full document height.
 - Lead with picture and shared transport. Never duplicate competing playback controls.
-- Use `PART` and `FULL MOVIE` tabs over that same picture, transport, playhead, families, takes, candidates, and review state. Default every project to `PART`.
-- `PART` holds the detailed 5/15/30/60-second waveform, family creation, SFX performance, agent fitting, A/B audition, exact approval, and evidence. The user can recenter its stable window at the playhead.
-- `FULL MOVIE` holds bounded Full/10-minute/2-minute waveform views, contact density, unclassified suggestions, noise/watch ranges, accepted/rejected family coverage, paged match review, and exact links back to `PART`.
+- Keep Part and Full Movie as deep-linkable scale states behind one continuous review desk. The desk always shows the picture, shared transport, Original/Replacement switch, one narrow full-film spine, active-family status, and one next action.
+- The film spine uses orange accepted marks, subdued pending marks, grouped nearby cues, and a real playhead. It replaces the permanent full-film waveform, density chart, lane stack, and review list.
+- Selecting a cue opens one bottom Cue Sheet. It contains the bounded 5/15/30/60-second waveform, family creation, SFX performance, agent fitting, A/B audition, exact approval, and evidence relevant to that cue.
 - Never stretch an hour-long waveform into a detail editor. Request only the visible audio interval at a bounded resolution.
-- Show the original waveform with accepted and pending ranges plus a real playhead.
-- Present one sequential family workflow: mark, review, perform, render/listen.
-- Keep the evidence rail available without letting it compete with the current action.
+- Keep contact, noise, loudness, Grafana receipts, and raw evidence under on-demand details rather than beside every decision.
+- Present one sequential family workflow: mark, review one related moment at a time, perform, render/listen.
 - Candidate audition clearly states the audible track, exact render identity, warnings, and approval status.
 
 ## Components and hierarchy
@@ -81,8 +80,8 @@ The synthesis is visible in the large photographic ORPHEUS shutters, framed imag
 - **Text actions:** underlined orange text for secondary navigation and utility actions.
 - **Primary action:** orange emphasis without oversized filled pills.
 - **Inputs:** square or 4 px radius, dark raised surface, visible labels, 44 px minimum target.
-- **Timeline:** source-derived waveform, tabular time, visible accepted/pending legend, keyboard range input.
-- **Match queue:** ruled rows with time, evidence, rank, Keep, and Exclude. Rank is visually secondary.
+- **Film spine:** compact full-picture navigation with grouped event markers and tabular time. The detailed source-derived waveform belongs in the Cue Sheet with its visible accepted/pending legend and keyboard range input.
+- **Match queue:** one ruled cue at a time with time, evidence, rank, Keep, Exclude, and Previous/Next. Rank is visually secondary.
 - **Family selector:** plain select plus Mark another sound. Current counts show kept and excluded decisions.
 - **Recording:** explicit microphone permission, visible state, retained unsaved capture on upload failure.
 - **Review:** original/replacement comparison followed by exact approve/reject controls; approval never appears inferred.
@@ -105,7 +104,7 @@ Orange means action and brand emphasis. Green means confirmed, amber means warni
 
 ## Responsive behavior
 
-Desktop uses a picture/workbench column with a sticky evidence rail when space permits. Mobile becomes one readable column: picture, waveform, family work, evidence. Match actions remain adjacent to their event, headers wrap without clipping, and no horizontal page scroll is allowed.
+Desktop uses the picture, transport, and film spine as one desk, with a bottom Cue Sheet for local work. Mobile keeps that order in one readable column; the Cue Sheet becomes a bounded vertical drawer. Match actions remain adjacent to their event, headers wrap without clipping, and no horizontal page scroll is allowed.
 
 ## Accessibility and truth
 
@@ -125,7 +124,7 @@ The dark cinematic treatment and large masked title are deliberate reference-led
 
 ## Acceptance
 
-- The first workspace viewport makes picture, timeline, selected family, and next action understandable.
+- The first workspace viewport makes picture, film spine, selected family, and next action understandable.
 - Landing and workspace share one header and full-height grain surround.
 - All four references contribute through the synthesis without copied assets.
 - 100 match rows, a long filename, empty state, errors, indexing, and stale evidence remain usable.

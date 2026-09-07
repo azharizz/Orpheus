@@ -81,7 +81,7 @@ function NewFamily({ project, position, disabled, onCreated, defer }) {
             type="number"
             min="0"
             max={project.seconds}
-            step="0.01"
+            step="0.001"
             value={start}
             disabled={disabled}
             onChange={(event) => setStart(event.target.value)}
@@ -100,7 +100,7 @@ function NewFamily({ project, position, disabled, onCreated, defer }) {
             type="number"
             min="0"
             max={project.seconds}
-            step="0.01"
+            step="0.001"
             value={end}
             disabled={disabled}
             onChange={(event) => setEnd(event.target.value)}
@@ -139,20 +139,23 @@ function AddExample({ project, family, position, disabled }) {
       <p>Bracket a visibly and audibly matching occurrence. Distinct examples remain separate during full-movie ranking.</p>
     </div></div>
     <div className="seed-fields">
-      <label>Start (seconds)<input type="number" min="0" max={project.seconds} step="0.01" value={start} disabled={disabled} onChange={(event) => setStart(event.target.value)} /></label>
+      <label>Start (seconds)<input type="number" min="0" max={project.seconds} step="0.001" value={start} disabled={disabled} onChange={(event) => setStart(event.target.value)} /></label>
       <button type="button" disabled={disabled} onClick={() => setStart(Number(position.toFixed(3)))}>Set start at {time(position)}</button>
-      <label>End (seconds)<input type="number" min="0" max={project.seconds} step="0.01" value={end} disabled={disabled} onChange={(event) => setEnd(event.target.value)} /></label>
+      <label>End (seconds)<input type="number" min="0" max={project.seconds} step="0.001" value={end} disabled={disabled} onChange={(event) => setEnd(event.target.value)} /></label>
       <button type="button" disabled={disabled} onClick={() => setEnd(Number(position.toFixed(3)))}>Set end at {time(position)}</button>
     </div>
     <button className="primary" disabled={disabled}>Add confirmed example</button>
   </form>;
 }
 
-export function MatchReview({ project, family, disabled, onPreview }) {
+export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "" }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
-  const [page, setPage] = useState(0);
-  const pageSize = 5;
+  const pageSize = Math.max(1, Number(requestedPageSize) || 5);
+  const [page, setPage] = useState(() => {
+    const index = focusId ? matches.findIndex((match) => match.id === focusId) : -1;
+    return index >= 0 ? Math.floor(index / pageSize) : 0;
+  });
   const window = pageWindow(matches, page, pageSize);
   const { items: visibleMatches, page: currentPage, pages: pageCount, start: pageStart } = window;
   const decided = Object.keys(decisions).length;
@@ -174,6 +177,11 @@ export function MatchReview({ project, family, disabled, onPreview }) {
       setPage(0);
       await loadFamilies(project.id);
     }
+  }
+  function movePage(nextPage) {
+    const next = pageWindow(matches, nextPage, pageSize).items[0];
+    setPage(nextPage);
+    if (next) onPreview(matchRange(next), next);
   }
   return (
     <section className="family-step" aria-labelledby="matches-title">
@@ -201,7 +209,7 @@ export function MatchReview({ project, family, disabled, onPreview }) {
                     type="button"
                     disabled={disabled}
                     aria-label={`Play match ${matchNumber} from ${time(range[0])} to ${time(range[1])}`}
-                    onClick={() => onPreview(range)}
+                    onClick={() => onPreview(range, match)}
                   >
                     <span className="match-play" aria-hidden="true">▶</span>
                     <span>
@@ -248,7 +256,7 @@ export function MatchReview({ project, family, disabled, onPreview }) {
                 <button
                   type="button"
                   disabled={disabled || currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
+                  onClick={() => movePage(currentPage - 1)}
                 >
                   Previous
                 </button>
@@ -258,7 +266,7 @@ export function MatchReview({ project, family, disabled, onPreview }) {
                 <button
                   type="button"
                   disabled={disabled || currentPage === pageCount - 1}
-                  onClick={() => setPage(currentPage + 1)}
+                  onClick={() => movePage(currentPage + 1)}
                 >
                   Next
                 </button>
@@ -407,6 +415,9 @@ export function FamilyWorkbench({
   onPreview,
   selectedFamilyId,
   onMovieSearch,
+  onReview,
+  onFamilyChange,
+  compact = false,
 }) {
   const families = Array.isArray(data) ? data : data?.families || [];
   const index = data?.index || project.similarity_index;
@@ -417,6 +428,7 @@ export function FamilyWorkbench({
   function created(id) {
     setChosen(id || "");
     setAdding(false);
+    onFamilyChange?.(id || "");
   }
   return (
     <div className="family-workbench">
@@ -432,6 +444,7 @@ export function FamilyWorkbench({
               onChange={(event) => {
                 setChosen(event.target.value);
                 setAdding(false);
+                onFamilyChange?.(event.target.value);
               }}
             >
               {families.map((item) => (
@@ -473,8 +486,8 @@ export function FamilyWorkbench({
               {rangesCount(family.rejected_ranges)} excluded
             </p>
           </div>
-          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} onPreview={onPreview} />}
-          {family.scope !== "part" && project.seconds >= 300 && <p className="family-full-link">Review {(family.pending_matches || []).length} proposed matches in <strong>Full Movie</strong>. Open any one there for detailed listening in Part.</p>}
+          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
+          {family.scope !== "part" && project.seconds >= 300 && <div className="family-full-link"><span>Review {(family.pending_matches || []).length} proposed matches in the film spine.</span>{onReview && <button type="button" onClick={() => onReview(family.id)}>Open review</button>}</div>}
           {family.warning && <p className="warning">{family.warning}</p>}
           {family.scope === "part" && <AddExample project={project} family={family} position={position} disabled={disabled} />}
           <section className="family-step">
