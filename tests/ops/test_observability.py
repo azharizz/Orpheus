@@ -28,17 +28,22 @@ class EvidenceChecks(unittest.TestCase):
             o.emit(pid, "deterministic_baseline", {"metrics": {
                 "integrated_lufs": -26.2, "true_peak_dbtp": -0.5,
                 "picture_unchanged": True, "clipped_samples": 0,
-            }, "measurements": {"accepted_events": 9}})
+            }, "measurements": {"accepted_events": 9}}, timestamp=1000)
             o.emit(pid, "candidate", {"metrics": {
                 "integrated_lufs": -28.4, "true_peak_dbtp": -4.3,
                 "picture_unchanged": True, "clipped_samples": 0,
             }, "measurements": {"accepted_events": 9}})
             o.emit(pid, "selection", {"decision": "needs_human_review"})
+            o.emit(pid, "tool_result", {"name": "render_arrangement", "response": {"status": "ok"}})
+            o.emit(pid, "session_saved", {}, timestamp=1012.5)
             metrics = o.metrics_text()
             self.assertIn(f'orpheus_baseline_integrated_lufs{{project_id="{pid}"}} -26.2', metrics)
             self.assertIn(f'orpheus_candidate_integrated_lufs{{project_id="{pid}"}} -28.4', metrics)
             self.assertIn(f'orpheus_project_candidate_state{{project_id="{pid}"}} 1', metrics)
             self.assertIn(f'orpheus_project_review_state{{project_id="{pid}"}} 0', metrics)
+            self.assertIn(f'orpheus_project_run_state{{project_id="{pid}"}} 1', metrics)
+            self.assertIn(f'orpheus_project_run_duration_seconds{{project_id="{pid}"}} 12.5', metrics)
+            self.assertIn(f'orpheus_project_tool_events_total{{project_id="{pid}",tool="render_arrangement",outcome="completed"}} 1', metrics)
 
     def test_redaction_idempotence_outage_and_signal(self):
         with (
@@ -72,6 +77,7 @@ class EvidenceChecks(unittest.TestCase):
             self.assertNotIn("private", raw)
             self.assertNotIn("NaN", raw)
             self.assertTrue(json.loads(raw)["tool_error"])
+            self.assertEqual(json.loads(raw)["outcome"], "failed")
             self.assertTrue(o.flush()["errors"])
             self.assertEqual(o.pending(), 1)
             profile = o.sound_profile(load_case()["sfx_path"])

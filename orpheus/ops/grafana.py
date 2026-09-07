@@ -325,39 +325,87 @@ def dashboard():
         ],
     )
 
-    timeline_options = {
-        "alignValue": "left",
-        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-        "mergeValues": True,
-        "rowHeight": 0.8,
-        "showValue": "always",
-        "tooltip": {"mode": "single", "sort": "none"},
-    }
-    add(
-        "Agent decision path", "state-timeline", {"x": 0, "y": 21, "w": 12, "h": 9},
-        [target(base + ' | event=~"deterministic_baseline|grafana_investigation|candidate|candidate_timing_measured|selection|human_review"', datasource=loki)],
-        description="Mandatory evidence gates appear beside render and selection events. Human review closes the path.",
-        options=timeline_options,
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0, "noValue": "Waiting"},
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event"]}}},
-        ],
-        datasource=loki,
-    )["timeFrom"] = "6h"
-    add(
-        "Provider execution", "state-timeline", {"x": 12, "y": 21, "w": 12, "h": 9},
-        [target(base + ' | event=~"model_attempt|model_failed|model_response|audio_request|audio_response" | line_format "{{.requested_model}} · {{.event}}"', datasource=loki)],
-        description="Provider responses and failures share one chronology so failover is visible without reading raw logs.",
-        options=timeline_options,
-        field={"color": {"mode": "continuous-GrYlRd"}, "decimals": 0},
-        transformations=[{"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "Line"]}}}],
-        datasource=loki,
-    )["timeFrom"] = "6h"
-
     table_options = {"cellHeight": "sm", "footer": {"countRows": False, "fields": "", "reducer": ["sum"], "show": False}, "showHeader": True}
     add(
-        "Experiment history", "table", {"x": 0, "y": 30, "w": 15, "h": 9},
+        "Run status", "stat", {"x": 0, "y": 21, "w": 4, "h": 7},
+        [target("orpheus_project_run_state" + project, instant=True)],
+        description="A terminal session_saved or failed event closes the run. Human review is tracked separately.",
+        options=stat_options,
+        field={
+            "color": {"mode": "thresholds"},
+            "mappings": [{"type": "value", "options": {
+                "-1": {"text": "FAILED", "color": rose},
+                "0": {"text": "RUNNING", "color": amber},
+                "1": {"text": "COMPLETED", "color": green},
+            }}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
+        },
+    )
+    add(
+        "Agent decision ledger", "table", {"x": 4, "y": 21, "w": 10, "h": 7},
+        [target(base + ' | event=~"deterministic_baseline|grafana_investigation|candidate|candidate_timing_measured|selection|human_review"', datasource=loki)],
+        description="Discrete, timestamped evidence gates. Rows never imply that a completed step is still running.",
+        options=table_options,
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "topic", "status", "candidate_id", "decision"]}}},
+            {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": False}]}},
+        ],
+        datasource=loki,
+    )
+    add(
+        "Provider execution", "table", {"x": 14, "y": 21, "w": 10, "h": 7},
+        [target(base + ' | event=~"model_failed|model_response|audio_failed|audio_response"', datasource=loki)],
+        description="One completed response or failure per row. elapsed_s is real request duration, not a stretched dashboard state.",
+        options=table_options,
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "requested_model", "served_model", "status_code", "elapsed_s"]}}},
+            {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": False}]}},
+        ],
+        datasource=loki,
+    )
+
+    add(
+        "Candidate evidence", "table", {"x": 0, "y": 28, "w": 12, "h": 8},
+        [target(base + ' | event=~"candidate|candidate_timing_measured|candidate_audio_review"', datasource=loki)],
+        description="Render, engineering measurement and acoustic review remain separate evidence records.",
+        options=table_options,
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "candidate_id", "status", "integrated_lufs", "true_peak_dbtp", "clipped_samples", "max_abs_peak_error_ms", "picture_unchanged"]}}},
+        ],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
+    )
+    add(
+        "Failure taxonomy", "bargauge", {"x": 12, "y": 28, "w": 6, "h": 8},
+        [target('label_replace(orpheus_project_provider_events_total' + project[:-1] + ',outcome="failed"}, "provider", "$1", "model", "([^/]+).*" )', instant=True, legend="{{provider}}")],
+        description="Failed provider requests grouped by requested model.",
+        options={**gauge_options, "orientation": "horizontal"},
+        field={"color": {"mode": "fixed", "fixedColor": rose}, "decimals": 0, "min": 0},
+    )
+    add(
+        "Tool execution", "bargauge", {"x": 18, "y": 28, "w": 6, "h": 8},
+        [target('orpheus_project_tool_events_total' + project, instant=True, legend="{{tool}} · {{outcome}}")],
+        description="Completed and failed tool responses, normalized at the telemetry boundary.",
+        options=gauge_options,
+        field={"color": {"mode": "continuous-GrYlRd"}, "decimals": 0, "min": 0},
+    )
+    add(
+        "Grafana MCP evidence", "table", {"x": 0, "y": 36, "w": 10, "h": 7},
+        [target(base + ' | event="grafana_investigation"', datasource=loki)],
+        description="Receipts prove that the agent queried project history before rendering and candidate evidence after measurement.",
+        options=table_options,
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "topic", "status", "candidate_id", "receipt_id"]}}},
+        ],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
+    )
+    add(
+        "Experiment history", "table", {"x": 10, "y": 36, "w": 14, "h": 7},
         [target(base + ' | event=~"take_recorded|take_experiment|selection|human_review|candidate_timing_measured"', datasource=loki)],
         description="Immutable measurements and human decisions. Model observations remain hypotheses until reviewed.",
         options=table_options,
@@ -368,28 +416,34 @@ def dashboard():
         field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
     )
     add(
-        "Grafana MCP", "stat", {"x": 15, "y": 30, "w": 3, "h": 4},
+        "Grafana MCP", "stat", {"x": 0, "y": 43, "w": 4, "h": 4},
         [target('(orpheus_project_events_total' + project[:-1] + ',event="grafana_investigation"} > bool 0)', instant=True)], options=stat_options,
         description="Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
         field={"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}},
     )
     add(
-        "Collector", "stat", {"x": 18, "y": 30, "w": 3, "h": 4},
+        "Collector", "stat", {"x": 4, "y": 43, "w": 4, "h": 4},
         [target('up{job="orpheus"}', instant=True)], options=stat_options,
         field={"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": rose}, "1": {"text": "ONLINE", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]}},
     )
     add(
-        "Pending exports", "stat", {"x": 21, "y": 30, "w": 3, "h": 4},
+        "Pending exports", "stat", {"x": 8, "y": 43, "w": 4, "h": 4},
         [target("orpheus_export_pending", instant=True)], options=stat_options,
         field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds},
     )
     add(
-        "Provider failures", "stat", {"x": 15, "y": 34, "w": 4, "h": 5},
+        "Provider failures", "stat", {"x": 12, "y": 43, "w": 4, "h": 4},
         [target("orpheus_project_provider_failures_total" + project, instant=True)], options=stat_options,
         field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}, {"color": amber, "value": 1}, {"color": rose, "value": 3}]}},
     )
     add(
-        "Reported cost", "stat", {"x": 19, "y": 34, "w": 5, "h": 5},
+        "Run duration", "stat", {"x": 16, "y": 43, "w": 4, "h": 4},
+        [target("orpheus_project_run_duration_seconds" + project, instant=True)], options=stat_options,
+        description="Wall-clock time from deterministic baseline to the terminal session event.",
+        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 1, "unit": "s"},
+    )
+    add(
+        "Reported cost", "stat", {"x": 20, "y": 43, "w": 4, "h": 4},
         [target("orpheus_project_reported_cost_usd_total" + project, instant=True)], options=stat_options,
         description="Only provider-reported cost. Missing receipts are not zero cost.",
         field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 4, "unit": "currencyUSD"},
@@ -405,7 +459,7 @@ def dashboard():
             "id": len(panels) + len(raw_children) + 2,
             "title": title,
             "type": "logs",
-            "gridPos": {"x": 0, "y": 40 + len(raw_children) * 7, "w": 24, "h": 7},
+            "gridPos": {"x": 0, "y": 48 + len(raw_children) * 7, "w": 24, "h": 7},
             "datasource": {"type": "loki", "uid": loki},
             "targets": [target(expr, datasource=loki)],
             "options": {"dedupStrategy": "none", "enableLogDetails": True, "prettifyLogMessage": False, "showCommonLabels": False, "showLabels": False, "showTime": True, "sortOrder": "Descending", "wrapLogMessage": True},
@@ -415,14 +469,14 @@ def dashboard():
         "title": "Raw evidence · open for diagnosis",
         "type": "row",
         "collapsed": True,
-        "gridPos": {"x": 0, "y": 39, "w": 24, "h": 1},
+        "gridPos": {"x": 0, "y": 47, "w": 24, "h": 1},
         "panels": raw_children,
     })
     doc = {
         "uid": "orpheus",
         "title": "Agentic Foley Control Room",
         "schemaVersion": 40,
-        "version": 2,
+        "version": 5,
         "refresh": "5s",
         "time": {"from": "now-14d", "to": "now"},
         "tags": ["orpheus", "agent", "foley", "local"],

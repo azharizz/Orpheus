@@ -19,9 +19,11 @@ class GrafanaSetupChecks(unittest.TestCase):
             doc = json.loads((root / "dashboards/foley.json").read_text())
             kinds = [panel["type"] for panel in doc["panels"]]
             self.assertEqual(doc["title"], "Agentic Foley Control Room")
-            self.assertIn("state-timeline", kinds)
+            self.assertNotIn("state-timeline", kinds)
             self.assertIn("barchart", kinds)
             self.assertIn("gauge", kinds)
+            self.assertGreaterEqual(kinds.count("table"), 4)
+            self.assertIn("Run status", [panel["title"] for panel in doc["panels"]])
             self.assertNotIn("logs", kinds)
             raw = next(panel for panel in doc["panels"] if panel["type"] == "row")
             self.assertTrue(raw["collapsed"])

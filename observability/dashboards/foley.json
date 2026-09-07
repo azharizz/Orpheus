@@ -2,7 +2,7 @@
   "uid": "orpheus",
   "title": "Agentic Foley Control Room",
   "schemaVersion": 40,
-  "version": 2,
+  "version": 5,
   "refresh": "5s",
   "time": {
     "from": "now-14d",
@@ -893,15 +893,94 @@
     },
     {
       "id": 12,
-      "title": "Agent decision path",
-      "type": "state-timeline",
+      "title": "Run status",
+      "type": "stat",
       "gridPos": {
         "x": 0,
         "y": 21,
-        "w": 12,
-        "h": 9
+        "w": 4,
+        "h": 7
       },
-      "description": "Mandatory evidence gates appear beside render and selection events. Human review closes the path.",
+      "description": "A terminal session_saved or failed event closes the run. Human review is tracked separately.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_run_state{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "FAILED",
+                  "color": "#FF8790"
+                },
+                "0": {
+                  "text": "RUNNING",
+                  "color": "#EAC17C"
+                },
+                "1": {
+                  "text": "COMPLETED",
+                  "color": "#9DCFAD"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#EAC17C",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "title": "Agent decision ledger",
+      "type": "table",
+      "gridPos": {
+        "x": 4,
+        "y": 21,
+        "w": 10,
+        "h": 7
+      },
+      "description": "Discrete, timestamped evidence gates. Rows never imply that a completed step is still running.",
       "datasource": {
         "type": "loki",
         "uid": "orpheus-loki"
@@ -920,28 +999,26 @@
         }
       ],
       "options": {
-        "alignValue": "left",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "showValue": "always",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "showHeader": true
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#FF5A36"
-          },
-          "decimals": 0,
-          "noValue": "Waiting"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
         },
         "overrides": []
       },
@@ -961,25 +1038,39 @@
             "include": {
               "names": [
                 "Time",
-                "event"
+                "event",
+                "topic",
+                "status",
+                "candidate_id",
+                "decision"
               ]
             }
           }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": [
+              {
+                "field": "Time",
+                "desc": false
+              }
+            ]
+          }
         }
-      ],
-      "timeFrom": "6h"
+      ]
     },
     {
-      "id": 13,
+      "id": 14,
       "title": "Provider execution",
-      "type": "state-timeline",
+      "type": "table",
       "gridPos": {
-        "x": 12,
+        "x": 14,
         "y": 21,
-        "w": 12,
-        "h": 9
+        "w": 10,
+        "h": 7
       },
-      "description": "Provider responses and failures share one chronology so failover is visible without reading raw logs.",
+      "description": "One completed response or failure per row. elapsed_s is real request duration, not a stretched dashboard state.",
       "datasource": {
         "type": "loki",
         "uid": "orpheus-loki"
@@ -987,7 +1078,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_attempt|model_failed|model_response|audio_request|audio_response\" | line_format \"{{.requested_model}} \u00b7 {{.event}}\"",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"model_failed|model_response|audio_failed|audio_response\"",
           "datasource": {
             "type": "loki",
             "uid": "orpheus-loki"
@@ -998,53 +1089,351 @@
         }
       ],
       "options": {
-        "alignValue": "left",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "showValue": "always",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "showHeader": true
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "decimals": 0
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
         },
         "overrides": []
       },
       "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": true,
+            "keepTime": true
+          }
+        },
         {
           "id": "filterFieldsByName",
           "options": {
             "include": {
               "names": [
                 "Time",
-                "Line"
+                "event",
+                "requested_model",
+                "served_model",
+                "status_code",
+                "elapsed_s"
+              ]
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": [
+              {
+                "field": "Time",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Candidate evidence",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Render, engineering measurement and acoustic review remain separate evidence records.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=~\"candidate|candidate_timing_measured|candidate_audio_review\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": true,
+            "keepTime": true
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "event",
+                "candidate_id",
+                "status",
+                "integrated_lufs",
+                "true_peak_dbtp",
+                "clipped_samples",
+                "max_abs_peak_error_ms",
+                "picture_unchanged"
               ]
             }
           }
         }
-      ],
-      "timeFrom": "6h"
+      ]
     },
     {
-      "id": 14,
-      "title": "Experiment history",
+      "id": 16,
+      "title": "Failure taxonomy",
+      "type": "bargauge",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Failed provider requests grouped by requested model.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(orpheus_project_provider_events_total{project_id=~\"$project\",outcome=\"failed\"}, \"provider\", \"$1\", \"model\", \"([^/]+).*\" )",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "left",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF8790"
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "title": "Tool execution",
+      "type": "bargauge",
+      "gridPos": {
+        "x": 18,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      },
+      "description": "Completed and failed tool responses, normalized at the telemetry boundary.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_tool_events_total{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{tool}} \u00b7 {{outcome}}"
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "left",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "title": "Grafana MCP evidence",
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 30,
-        "w": 15,
-        "h": 9
+        "y": 36,
+        "w": 10,
+        "h": 7
+      },
+      "description": "Receipts prove that the agent queried project history before rendering and candidate evidence after measurement.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"orpheus\"} | json | project_id=~\"$project\" | event=\"grafana_investigation\"",
+          "datasource": {
+            "type": "loki",
+            "uid": "orpheus-loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "maxLines": 500
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": true,
+            "keepTime": true
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Time",
+                "topic",
+                "status",
+                "candidate_id",
+                "receipt_id"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "Experiment history",
+      "type": "table",
+      "gridPos": {
+        "x": 10,
+        "y": 36,
+        "w": 14,
+        "h": 7
       },
       "description": "Immutable measurements and human decisions. Model observations remain hypotheses until reviewed.",
       "datasource": {
@@ -1119,13 +1508,13 @@
       ]
     },
     {
-      "id": 15,
+      "id": 20,
       "title": "Grafana MCP",
       "type": "stat",
       "gridPos": {
-        "x": 15,
-        "y": 30,
-        "w": 3,
+        "x": 0,
+        "y": 43,
+        "w": 4,
         "h": 4
       },
       "description": "Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
@@ -1198,13 +1587,13 @@
       }
     },
     {
-      "id": 16,
+      "id": 21,
       "title": "Collector",
       "type": "stat",
       "gridPos": {
-        "x": 18,
-        "y": 30,
-        "w": 3,
+        "x": 4,
+        "y": 43,
+        "w": 4,
         "h": 4
       },
       "description": "",
@@ -1277,13 +1666,13 @@
       }
     },
     {
-      "id": 17,
+      "id": 22,
       "title": "Pending exports",
       "type": "stat",
       "gridPos": {
-        "x": 21,
-        "y": 30,
-        "w": 3,
+        "x": 8,
+        "y": 43,
+        "w": 4,
         "h": 4
       },
       "description": "",
@@ -1342,14 +1731,14 @@
       }
     },
     {
-      "id": 18,
+      "id": 23,
       "title": "Provider failures",
       "type": "stat",
       "gridPos": {
-        "x": 15,
-        "y": 34,
+        "x": 12,
+        "y": 43,
         "w": 4,
-        "h": 5
+        "h": 4
       },
       "description": "",
       "datasource": {
@@ -1411,14 +1800,68 @@
       }
     },
     {
-      "id": 19,
+      "id": 24,
+      "title": "Run duration",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 43,
+        "w": 4,
+        "h": 4
+      },
+      "description": "Wall-clock time from deterministic baseline to the terminal session event.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "orpheus_project_run_duration_seconds{project_id=~\"$project\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "orpheus-prometheus"
+          },
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF5A36"
+          },
+          "decimals": 1,
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
       "title": "Reported cost",
       "type": "stat",
       "gridPos": {
-        "x": 19,
-        "y": 34,
-        "w": 5,
-        "h": 5
+        "x": 20,
+        "y": 43,
+        "w": 4,
+        "h": 4
       },
       "description": "Only provider-reported cost. Missing receipts are not zero cost.",
       "datasource": {
@@ -1465,24 +1908,24 @@
       }
     },
     {
-      "id": 20,
+      "id": 26,
       "title": "Raw evidence \u00b7 open for diagnosis",
       "type": "row",
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 47,
         "w": 24,
         "h": 1
       },
       "panels": [
         {
-          "id": 21,
+          "id": 27,
           "title": "Candidate and sound measurements",
           "type": "logs",
           "gridPos": {
             "x": 0,
-            "y": 40,
+            "y": 48,
             "w": 24,
             "h": 7
           },
@@ -1515,12 +1958,12 @@
           }
         },
         {
-          "id": 22,
+          "id": 28,
           "title": "Failures and rejected tools",
           "type": "logs",
           "gridPos": {
             "x": 0,
-            "y": 47,
+            "y": 55,
             "w": 24,
             "h": 7
           },
@@ -1553,12 +1996,12 @@
           }
         },
         {
-          "id": 23,
+          "id": 29,
           "title": "Agent, MCP and trace evidence",
           "type": "logs",
           "gridPos": {
             "x": 0,
-            "y": 54,
+            "y": 62,
             "w": 24,
             "h": 7
           },

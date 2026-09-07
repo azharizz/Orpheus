@@ -135,6 +135,8 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         "operation",
         "provenance",
         "topic",
+        "receipt_id",
+        "outcome",
     ):
         if key in fields:
             payload[key] = token(fields[key])
@@ -166,6 +168,8 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         )
         if finite(response.get("status_code")):
             payload["status_code"] = response["status_code"]
+    if event == "tool_result":
+        payload["outcome"] = "failed" if payload.get("tool_error") else "completed"
     if isinstance(fields.get("timing"), dict):
         payload.update(numeric(fields["timing"]))
     coverage = fields.get("coverage")
@@ -419,7 +423,7 @@ def metrics_text():
         counts[r["event"]] = counts.get(r["event"], 0) + 1
         project = projects.setdefault(
             r["project_id"],
-            {"events": {}, "providers": {}, "failures": 0, "tokens": 0, "cost": 0},
+            {"events": {}, "providers": {}, "tools": {}, "failures": 0, "tokens": 0, "cost": 0, "run_state": 0},
         )
         project["events"][r["event"]] = project["events"].get(r["event"], 0) + 1
         if r["event"] in ("model_failed", "audio_failed"):
@@ -442,6 +446,18 @@ def metrics_text():
             project["providers"][key] = project["providers"].get(key, 0) + 1
         if r["event"] == "deterministic_baseline":
             project["baseline"] = r
+            project["run_state"] = 0
+            project["run_started_at"] = r["observed_at"]
+            project.pop("run_finished_at", None)
+        if r["event"] == "session_saved":
+            project["run_state"] = 1
+            project["run_finished_at"] = r["observed_at"]
+        if r["event"] == "failed":
+            project["run_state"] = -1
+            project["run_finished_at"] = r["observed_at"]
+        if r["event"] == "tool_result":
+            key = (r.get("name", "unknown"), "failed" if r.get("tool_error") else "completed")
+            project["tools"][key] = project["tools"].get(key, 0) + 1
         if r["event"] in ("candidate", "candidate_timing_measured"):
             latest = r
         if r["event"] == "candidate":
@@ -495,7 +511,13 @@ def metrics_text():
             f"orpheus_project_provider_failures_total{{{labels}}} {project['failures']}",
             f"orpheus_project_reported_tokens_total{{{labels}}} {project['tokens']}",
             f"orpheus_project_reported_cost_usd_total{{{labels}}} {project['cost']}",
+            f"orpheus_project_run_state{{{labels}}} {project['run_state']}",
         ]
+        if finite(project.get("run_started_at")) and finite(project.get("run_finished_at")):
+            lines.append(
+                f"orpheus_project_run_duration_seconds{{{labels}}} "
+                + str(project["run_finished_at"] - project["run_started_at"])
+            )
         lines += [
             f'orpheus_project_events_total{{{labels},event="{event}"}} {count}'
             for event, count in project["events"].items()
@@ -503,6 +525,10 @@ def metrics_text():
         lines += [
             f'orpheus_project_provider_events_total{{{labels},model="{model}",outcome="{outcome}"}} {count}'
             for (model, outcome), count in project["providers"].items()
+        ]
+        lines += [
+            f'orpheus_project_tool_events_total{{{labels},tool="{tool}",outcome="{outcome}"}} {count}'
+            for (tool, outcome), count in project["tools"].items()
         ]
         for stage in ("baseline", "candidate"):
             row = project.get(stage, {})
