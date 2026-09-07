@@ -30,10 +30,12 @@ TIME_BINS = 8
 FEATURES = BANDS * TIME_BINS
 MAX_MATCHES = 100
 MAX_FAMILIES = 50
+MAX_EXAMPLES = 8
 MIN_SEED_S = 0.04
 MAX_SEED_S = 4.0
 MIN_MATCH_GAP_S = 0.30
 MIN_SIMILARITY_SCORE = 0.45
+MAX_EXAMPLE_ENERGY_DROP_DB = 8
 BATCH_WINDOWS = 128
 MIX_CHUNK_FRAMES = RATE * 10
 
@@ -279,11 +281,16 @@ def _match_id(cache_key, index):
 def _rank(case, index, accepted, rejected, excluded):
     vectors = np.load(_index_paths(case["id"])[1], mmap_mode="r")
     energies = np.load(_index_paths(case["id"])[2], mmap_mode="r")
-    positives = [_feature_at(case["original_path"], item["range_s"])[0] for item in accepted]
+    positive_rows = [_feature_at(case["original_path"], item["range_s"]) for item in accepted]
+    positives = [row[0] for row in positive_rows]
     negatives = [_feature_at(case["original_path"], item["range_s"])[0] for item in rejected]
-    positive = np.mean(positives, axis=0)
-    positive /= max(float(np.linalg.norm(positive)), 1e-8)
-    scores = np.asarray(vectors @ positive)
+    # Keep distinct confirmed sounds distinct: a heel strike and a soft grass step
+    # should each retrieve their nearest acoustic neighbours, not blur into an average.
+    positive_scores = np.asarray(vectors @ np.stack(positives).T)
+    nearest_examples = positive_scores.argmax(axis=1)
+    scores = positive_scores.max(axis=1)
+    example_energy = np.asarray([energies[min(len(energies) - 1, max(0, round((row[1] - PRE_ONSET_S) / HOP_S)))] for row in positive_rows])
+    scores = np.where(np.asarray(energies) >= example_energy[nearest_examples] - MAX_EXAMPLE_ENERGY_DROP_DB, scores, -np.inf)
     if negatives:
         negative = np.asarray(vectors @ np.stack(negatives).T).max(axis=1)
         scores -= 0.35 * np.maximum(negative, 0)
@@ -312,6 +319,7 @@ def _rank(case, index, accepted, rejected, excluded):
             continue
         chosen.append(anchor)
         score = float(scores[index_number])
+        example = accepted[int(nearest_examples[index_number])]
         results.append(
             {
                 "schema": MATCH_SCHEMA,
@@ -319,17 +327,22 @@ def _rank(case, index, accepted, rejected, excluded):
                 "range_s": [round(x, 6) for x in bounds],
                 "refined_anchor_s": round(anchor, 6),
                 "similarity_score": round(score, 6),
+                "matched_example_id": example["id"],
                 "decision": "pending",
                 "index_window": index_number,
                 "evidence_summary": (
-                    f"Acoustic fingerprint score {score:.3f}; onset refined to the strongest "
-                    "local sample. Ranking evidence only."
+                    f"Nearest confirmed example {example['id']} scored {score:.3f}; onset "
+                    "refined to the strongest local sample. Ranking evidence only."
                 ),
             }
         )
         if len(results) == MAX_MATCHES:
             break
     return results
+
+def add_example(pid, family_id, range_s):
+    from .family_actions import add_example as action
+    return action(pid, family_id, range_s)
 
 def create(pid, name, seed_range_s, *, defer=False):
     case = load(pid)
@@ -348,6 +361,7 @@ def create(pid, name, seed_range_s, *, defer=False):
         "refined_anchor_s": round(anchor, 6),
         "similarity_score": 1.0,
         "decision": "accepted",
+        "kind": "example",
         "evidence_summary": "User-confirmed query example.",
     }
     family_id = uuid.uuid4().hex[:12]
@@ -408,6 +422,11 @@ def search(pid, family_id):
             "end_s": doc["seed_range_s"][1],
             "measurements": {"pending_matches": len(doc["pending_matches"])},
         })
+        for item in doc["pending_matches"]:
+            obs.emit(pid, "family_range", {
+                "family_id": family_id, "mapping_id": item["id"], "status": "pending",
+                "start_s": item["range_s"][0], "end_s": item["range_s"][1],
+            })
         return doc
     except Exception:
         doc["status"] = "indexing_failed"
@@ -452,17 +471,17 @@ def review(pid, family_id, accepted_ids, rejected_ids):
     obs.emit(pid, "family_review", {"status": doc["status"], "measurements": {
         "accepted": len(accepted_ids), "rejected": len(rejected_ids)
     }})
+    for status, items in (("accepted", doc["accepted_ranges"]), ("rejected", doc["rejected_ranges"])):
+        for item in items:
+            obs.emit(pid, "family_range", {
+                "family_id": family_id, "mapping_id": item["id"], "status": status,
+                "start_s": item["range_s"][0], "end_s": item["range_s"][1],
+            })
     return doc
 
 def assign_take(pid, family_id, take_id):
-    from . import takes
-
-    takes.validated_audio(pid, family_id, take_id)
-    doc = _load_family(pid, family_id)
-    doc["replacement_take_id"] = take_id
-    doc["updated_at"] = time.time()
-    atomic(_family_path(pid, family_id), doc)
-    return doc
+    from .family_actions import assign_take as action
+    return action(pid, family_id, take_id)
 
 def _possible_dialogue_or_music(samples):
     mono = _mono(samples)
@@ -687,13 +706,14 @@ def _write_selective_wav(
     }
 
 def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
-           ramp_s=0.025, replacement_gain_db=0):
-    case = load(pid)
+           ramp_s=0.025, replacement_gain_db=0, case=None, accepted=None,
+           persist=True):
+    case = case or load(pid)
     family = _load_family(pid, family_id)
     take_id = take_id or family.get("replacement_take_id")
     if family.get("replacement_take_id") != take_id:
         raise ValueError("Assign the take to this family before rendering")
-    accepted = family["accepted_ranges"]
+    accepted = accepted or family["accepted_ranges"]
     if len(accepted) < 1:
         raise ValueError("Review at least one match before rendering")
     mix_path = Path(case.get("mix_path", case["original_path"]))
@@ -759,30 +779,16 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         "warning": "Only accepted windows were ducked. No source separation was applied.",
     }
     atomic(folder / f"{render_id}.json", receipt)
-    family["latest_render_id"] = render_id
-    family["latest_render"] = {key: receipt[key] for key in (
-        "id", "video", "master", "wav", "render_mode", "audio_sha256",
-        "arrangement", "mix", "metrics", "human_approved", "warning")}
-    family["updated_at"] = time.time()
-    atomic(_family_path(pid, family_id), family)
+    if persist:
+        family["latest_render_id"] = render_id
+        family["latest_render"] = {key: receipt[key] for key in (
+            "id", "video", "master", "wav", "render_mode", "audio_sha256",
+            "arrangement", "mix", "metrics", "human_approved", "warning")}
+        family["updated_at"] = time.time()
+        atomic(_family_path(pid, family_id), family)
     obs.emit(pid, "candidate", {
         **receipt, "measurements": {"accepted_events": len(accepted)}})
     return receipt
 def record_render_review(pid, family_id, render_id, verdict):
-    family = _load_family(pid, family_id)
-    if family.get("latest_render_id") != render_id or verdict not in ("approve", "reject"):
-        raise ValueError("Review does not match the latest family render")
-    receipt_path = project_dir(pid) / f"{render_id}.json"
-    receipt = json.loads(receipt_path.read_text())
-    expected = {"schema": "family-render.v1", "project_id": pid,
-                "family_id": family_id, "id": render_id}
-    if any(receipt.get(key) != value for key, value in expected.items()):
-        raise ValueError("Render receipt provenance mismatch")
-    receipt["human_approved"] = verdict == "approve"
-    receipt["human_verdict"] = verdict
-    atomic(receipt_path, receipt)
-    family["latest_render"]["human_approved"] = verdict == "approve"
-    family["last_render_verdict"] = verdict
-    family["updated_at"] = time.time()
-    atomic(_family_path(pid, family_id), family)
-    return family
+    from .family_actions import record_render_review as action
+    return action(pid, family_id, render_id, verdict)

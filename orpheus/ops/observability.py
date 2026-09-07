@@ -506,7 +506,7 @@ def metrics_text():
         if finite(latest.get(key)):
             lines.append(f"orpheus_latest_candidate_{key} {latest[key]}")
     selection_states = {"unsuitable": -1, "needs_human_review": 1}
-    review_states = {"rejected": -1, "approved": 1}
+    review_states = {"rejected": -1, "reject": -1, "approved": 1, "approve": 1}
     measured = (
         "integrated_lufs",
         "true_peak_dbtp",

@@ -34,6 +34,7 @@ class EvidenceChecks(unittest.TestCase):
                 "picture_unchanged": True, "clipped_samples": 0,
             }, "measurements": {"accepted_events": 9}})
             o.emit(pid, "selection", {"decision": "needs_human_review"})
+            o.emit(pid, "human_review", {"verdict": "approve"})
             o.emit(pid, "tool_result", {"name": "render_arrangement", "response": {"status": "ok"}})
             o.emit(pid, "session_saved", {}, timestamp=1012.5)
             o.emit(pid, "movie_analysis", {"status": "review_required", "measurements": {"progress": 100, "events": 42, "suggestions": 3, "noise_regions": 2, "duration_s": 1800}})
@@ -42,7 +43,7 @@ class EvidenceChecks(unittest.TestCase):
             self.assertIn(f'orpheus_baseline_integrated_lufs{{project_id="{pid}"}} -26.2', metrics)
             self.assertIn(f'orpheus_candidate_integrated_lufs{{project_id="{pid}"}} -28.4', metrics)
             self.assertIn(f'orpheus_project_candidate_state{{project_id="{pid}"}} 1', metrics)
-            self.assertIn(f'orpheus_project_review_state{{project_id="{pid}"}} 0', metrics)
+            self.assertIn(f'orpheus_project_review_state{{project_id="{pid}"}} 1', metrics)
             self.assertIn(f'orpheus_project_run_state{{project_id="{pid}"}} 1', metrics)
             self.assertIn(f'orpheus_project_tool_events_total{{project_id="{pid}",tool="render_arrangement",outcome="completed"}} 1', metrics)
             self.assertIn(f'orpheus_movie_progress{{project_id="{pid}"}} 100', metrics)

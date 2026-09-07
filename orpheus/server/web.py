@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +28,30 @@ INDEX_QUEUE = []
 PREP_THREAD = None
 STATIC = config.ROOT / "frontend" / "dist"
 DEFAULT_FEEDBACK = "Create a fitted alternative from these files."
+
+
+def start_observability():
+    if not obs.config():
+        return
+    from ..config import GRAFANA_PORTS
+    from ..ops.grafana import MetricsHandler
+
+    def serve_metrics():
+        try:
+            ThreadingHTTPServer(("127.0.0.1", GRAFANA_PORTS["METRICS"]), MetricsHandler).serve_forever()
+        except OSError:
+            pass
+
+    def export():
+        while True:
+            try:
+                obs.flush()
+            except (OSError, ValueError):
+                pass
+            time.sleep(2)
+
+    threading.Thread(target=serve_metrics, daemon=True, name="orpheus-metrics").start()
+    threading.Thread(target=export, daemon=True, name="orpheus-observability").start()
 
 
 def busy():
@@ -161,7 +186,13 @@ def project_list():
 
 def public_config():
     from ..agent.perception import MODEL
-    from ..agent.provider import MODELS
+    from ..agent.provider import MODELS, provider_config
+
+    try:
+        provider_config()
+        provider_ready = True
+    except ValueError:
+        provider_ready = False
 
     return {
         "max_file_bytes": config.MAX_FILE_BYTES,
@@ -174,6 +205,7 @@ def public_config():
         "max_controller_calls": config.MAX_CONTROLLER_CALLS,
         "audio_enabled": config.AUDIO_ENABLED,
         "controller_models": list(MODELS),
+        "provider_ready": provider_ready,
         "audio_model": MODEL,
         "storage": "local",
         "inference_destination": "Configured controller providers; audio observation through OpenRouter when enabled",
@@ -381,6 +413,7 @@ class Handler(LocalHandler):
             "/api/review",
             "/api/families",
             "/api/families/search",
+            "/api/families/examples",
             "/api/families/review",
             "/api/families/render",
             "/api/movie/analyze",
@@ -391,6 +424,8 @@ class Handler(LocalHandler):
             raise RequestError("Route not found.", 404)
         data = self.read_json(100000 if route == "/api/families/review" else 3000)
         if route == "/api/run":
+            from ..agent.provider import provider_config
+
             family_id = data.get("family_id")
             if not family_id:
                 raise RequestError(
@@ -404,6 +439,10 @@ class Handler(LocalHandler):
                     "Start the local Grafana stack before agent fitting. The agent requires Grafana MCP evidence.",
                     409,
                 )
+            try:
+                provider_config()
+            except ValueError as exc:
+                raise RequestError(str(exc), 409) from exc
             try:
                 family_agent.load_case(data["project_id"], family_id)
             except (ValueError, FileNotFoundError) as exc:
@@ -455,6 +494,12 @@ class Handler(LocalHandler):
             with mutation():
                 result = families.search(data["project_id"], data["family_id"])
             self.send_json(result, 201)
+        elif route == "/api/families/examples":
+            with mutation():
+                result = families.add_example(
+                    data["project_id"], data["family_id"], data["range_s"]
+                )
+            self.send_json(result, 201)
         elif route == "/api/families/review":
             decisions = data.get("decisions")
             if (
@@ -485,10 +530,11 @@ class Handler(LocalHandler):
             self.send_json(result, 201)
         elif route == "/api/families/render":
             with mutation():
-                result = families.render(
-                    data["project_id"],
-                    data["family_id"],
-                    data.get("take_id"),
+                family = families.get(data["project_id"], data["family_id"])
+                result = (
+                    family_agent.render_baseline(data["project_id"], data["family_id"], persist=True)
+                    if family.get("scope") == "part"
+                    else families.render(data["project_id"], data["family_id"], data.get("take_id"))
                 )
             self.send_json(result, 201)
         elif route == "/api/review":
@@ -508,6 +554,7 @@ def main():
             "Build the interface first: cd frontend && npm ci && npm run build"
         )
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    start_observability()
     print(f"Orpheus: http://127.0.0.1:{args.port}", flush=True)
     try:
         server.serve_forever()

@@ -5,8 +5,8 @@ Orpheus is a local, single-user Foley workbench for finding repeated sound event
 ## Workflow
 
 1. Import one short video or full film. Orpheus preserves the source, creates a browser preview, extracts analysis audio, and builds a cached local sound index.
-2. Open a bounded **Part**, listen to one exact occurrence, name its sound family, and record or upload its replacement SFX.
-3. Render a deterministic part preview or explicitly authorize the family agent. The paid agent must read Grafana history before fitting crop, timing, and gain inside the confirmed part; provider failover remains available.
+2. Open a bounded **Part**, name the sound family, and add up to eight visibly and audibly confirmed examples when the same event varies across the film.
+3. Record or upload its replacement SFX. Render a 15-second deterministic Part preview or explicitly authorize the family agent. Paid inference never receives or renders the full movie.
 4. Compare the original and replacement against the same picture, then approve or reject that exact part render.
 5. After approval, search the cached index across **Full Movie**. Review the ranked matches in batches; unclassified contact suggestions and possible noise only navigate back to a Part and never edit audio.
 6. Render accepted ranges. Every rejected, pending, unclassified, and untouched range keeps its original PCM.
@@ -49,7 +49,11 @@ Generate the deterministic 30-minute long-form validation movie outside Git:
 .venv/bin/python tools/generate_movie_fixture.py
 ```
 
-The output lives at `data/fixtures/synthetic-30-minute/` and includes the movie, source WAV, four replacement SFX files, and `ground-truth.json`. Pass `--duration 30` for a quick equivalent smoke fixture.
+The output lives at `data/fixtures/synthetic-30-minute/` and includes five non-identical walking sections, impact/cloth/noise/voice/music/quiet distractors, replacement SFX, and `ground-truth.json`. Pass `--duration 30` for a quick smoke fixture. Run the complete offline proof with:
+
+```sh
+ORPHEUS_DATA_DIR=/tmp/orpheus-a1 .venv/bin/python -m tools.validate_a1 data/fixtures/synthetic-30-minute
+```
 
 ## Structure
 

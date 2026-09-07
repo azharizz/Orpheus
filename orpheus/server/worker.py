@@ -255,7 +255,7 @@ async def run_turn(pid, family_id, feedback):
         if not obs.config():
             raise RuntimeError("Grafana MCP is required for agent coordination")
         phase = "deterministic_baseline"
-        baseline = families.render(pid, family_id)
+        baseline = family_agent.render_baseline(pid, family_id)
         turn["deterministic_baseline"] = {
             key: baseline[key]
             for key in ("id", "audio_sha256", "render_mode", "metrics", "mix")
@@ -282,7 +282,7 @@ async def run_turn(pid, family_id, feedback):
                     measurements={"range_duration_s": end - start},
                 )
         phase = "session"
-        session_id = pid + "-" + family_id
+        session_id = pid + "-" + family_id + "-part"
         session = await service.get_session(
             app_name=APP, user_id="local", session_id=session_id
         )
@@ -397,6 +397,7 @@ async def run_turn(pid, family_id, feedback):
                             feedback
                             + " Work only inside the confirmed sound-family ranges: "
                             + json.dumps(case["accepted_ranges"])
+                            + f". This is a {case['seconds']:.3f}s Part preview beginning at full-movie time {case.get('timeline_offset_s', 0):.3f}s; all tool timestamps use this local Part clock"
                             + ". The deterministic family baseline is "
                             + json.dumps(turn["deterministic_baseline"])
                             + ". Use it as the measured starting point. Query Grafana history before rendering, measure every agent candidate, then query Grafana sound evidence for that exact candidate before selection. Do not add, move, or extend sound outside confirmed ranges."

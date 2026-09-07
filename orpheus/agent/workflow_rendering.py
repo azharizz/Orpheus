@@ -360,6 +360,9 @@ class RenderingTools:
         if not candidate_id and decision != "unsuitable":
             return {"error": "Candidate required"}
         selected = next((c for c in cs if c["id"] == candidate_id), None)
+        if decision == "needs_human_review" and selected:
+            if not selected.get("engineering_pass"):
+                return {"error": "Selected candidate failed measured engineering checks."}
         strategy_count = len(
             {
                 c.get("strategy", {}).get("key")

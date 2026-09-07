@@ -4,7 +4,7 @@ Updated: 2026-09-07 (Asia/Jakarta)
 
 ## Current implementation
 
-The v2-only query-by-example workflow is implemented and committed. Projects are video-only, uploads stream to disk, media is prepared for browser playback, the local compact log-power index is deterministic/cached/memory-mapped/resumable, and one project can contain multiple sound families. A family has a confirmed seed, accepted/rejected/pending ranges, a family-owned replacement take, rescoring, selective duck-and-overlay rendering, preview, approval, and Grafana evidence.
+The current query-by-example workflow supports Approach A1. A family retains up to eight separate human-confirmed examples; nearest-prototype ranking plus accepted/rejected evidence drives the cached local full-movie search. Paid inference is confined to a 15-second Part reel and coordinates picture/audio evidence, Grafana history, timing, crop, gain, measurement, and human review. Full Movie performs only offline search, paginated review, and approved deterministic rendering.
 
 The release method is the compact NumPy/FFmpeg fingerprint. The CLAP prototype was benchmarked and removed because it did not meet queue precision for short Foley events and added a ~618 MB model. Provider failover is intentionally retained; legacy/v1 compatibility and whole-soundtrack replacement are removed.
 
@@ -38,7 +38,7 @@ One capped paid parity run was authorized and attempted on project `aed508f11aff
 ## Open work / blockers
 
 1. Obtain an explicit reuse grant before distributing or bundling the selected YouTube fixture. Its technical suitability is verified; its reuse license is not.
-2. Improve paid fitting before another paid run: reduce repeated frames/tool receipts/schema context, expose provider readiness and sanitized failure categories, and preserve valid drafts as clearly labelled drafts without carrying approval.
+2. A fresh external paid A1 run still requires `AGENT_PROVIDER_API_KEY`; no usable key is present in the current Orpheus or lab environment. Scripted ADK/DSP coverage passes and the earlier paid provider attempt remains diagnostic evidence.
 3. Consider limiting the initial pending-match queue and revealing more on demand; the successor fixture still presents 24 pending matches after nine events are kept.
 4. Run the final full test matrix and a new paid parity run only after provider readiness is visible. The media itself is no longer the technical blocker.
 

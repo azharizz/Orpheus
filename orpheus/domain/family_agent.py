@@ -15,6 +15,17 @@ from ..ops import observability as obs
 from . import families, media, projects, takes
 
 CHUNK_FRAMES = RATE * 10
+PREVIEW_SECONDS = 15
+
+
+def _write_wav(path, samples):
+    samples = np.asarray(samples)
+    channels = 1 if samples.ndim == 1 else samples.shape[1]
+    with wave.open(str(path), "wb") as output:
+        output.setparams((channels, 2, RATE, len(samples), "NONE", "not compressed"))
+        output.writeframes(
+            np.clip(np.round(samples * 32768), -32768, 32767).astype("<i2").tobytes()
+        )
 
 
 def load_case(pid, family_id):
@@ -35,7 +46,48 @@ def load_case(pid, family_id):
         accepted_ranges=[item["range_s"] for item in accepted],
         replacement_take_id=take_id,
     )
+    if case["seconds"] > PREVIEW_SECONDS:
+        seed = next((item for item in accepted if item["id"] == "seed"), accepted[0])
+        center = sum(seed["range_s"]) / 2
+        start = max(0, min(case["seconds"] - PREVIEW_SECONDS, center - PREVIEW_SECONDS / 2))
+        duration = min(PREVIEW_SECONDS, case["seconds"] - start)
+        folder = projects.project_dir(pid) / "previews"
+        folder.mkdir(exist_ok=True)
+        video = folder / f"{family_id}.mp4"
+        original = folder / f"{family_id}-original.wav"
+        mix = folder / f"{family_id}-mix.wav"
+        if not video.is_file():
+            projects.ff(
+                "-ss", start, "-i", case["video_path"], "-t", duration,
+                "-map", "0:v:0", "-an", "-c:v", "libx264", "-preset", "ultrafast", video,
+            )
+        for source, output in ((case["original_path"], original), (case.get("mix_path", case["original_path"]), mix)):
+            if not output.is_file():
+                _write_wav(output, families._read_range(source, round(start * RATE), round(duration * RATE)))
+        local = [[round(max(0, value - start), 6) for value in seed["range_s"]]]
+        case.update(
+            full_seconds=case["seconds"],
+            timeline_offset_s=start,
+            seconds=duration,
+            video_path=video,
+            source_video_path=video,
+            original_path=original,
+            mix_path=mix,
+            accepted_ranges=local,
+            accepted_items=[{
+                **seed,
+                "range_s": local[0],
+                "refined_anchor_s": seed.get("refined_anchor_s", center) - start,
+            }],
+        )
     return case
+
+
+def render_baseline(pid, family_id, *, persist=False):
+    case = load_case(pid, family_id)
+    return families.render(
+        pid, family_id, case=case, accepted=case.get("accepted_items"), persist=persist
+    )
 
 
 def _ranges(case):
@@ -177,7 +229,8 @@ def render_selection(
     )
     if media.picture_hash(source_video) != media.picture_hash(master_path):
         raise ValueError("Picture preservation failed")
-    accepted = families.get(pid, family_id)["accepted_ranges"]
+    family_doc = families.get(pid, family_id)
+    accepted = case.get("accepted_items") or family_doc["accepted_ranges"]
     mix_path = Path(case.get("mix_path", case["original_path"]))
     dialogue = [
         item["id"]
@@ -200,6 +253,8 @@ def render_selection(
         "master": master_path.name,
         "wav": wav_path.name,
         "render_mode": "agent_fitted_selective_duck_overlay",
+        "timeline_offset_s": case.get("timeline_offset_s", 0),
+        "preview_duration_s": case["seconds"],
         "audio_sha256": projects.digest(wav_path),
         "agent_fitting": {
             "candidate_id": candidate_id,
@@ -214,6 +269,7 @@ def render_selection(
             "ramp_s": float(ramp_s),
             "replacement_peak_protection_db": protection,
             "ranges_s": [item["range_s"] for item in accepted],
+            "global_ranges_s": [item["range_s"] for item in family_doc["accepted_ranges"]],
             "possible_dialogue_or_music_overlap_ids": dialogue,
             "warning": "Dialogue/music overlap is a conservative spectral heuristic, not source separation.",
         },
@@ -226,7 +282,7 @@ def render_selection(
         "warning": "Agent fitting is confined to human-accepted windows; approval remains human.",
     }
     projects.atomic(folder / f"{render_id}.json", receipt)
-    family = families.get(pid, family_id)
+    family = family_doc
     family["latest_render_id"] = render_id
     family["latest_render"] = {
         key: receipt[key]

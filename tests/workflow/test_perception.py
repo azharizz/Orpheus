@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
+import numpy as np
 
 from orpheus.agent import perception as p
 from orpheus.domain.projects import media
@@ -167,6 +168,13 @@ class PerceptionTests(unittest.TestCase):
         self.assertAlmostEqual(receipt["end_s"], actual, places=6)
         self.assertEqual(receipt["requested_end_s"], requested)
         self.assertEqual(receipt["end_clamped_to_audio_s"], actual)
+
+    def test_target_window_can_start_after_first_thirty_seconds(self):
+        case = {**self.case, "seconds": 70}
+        with patch.object(media, "read_audio", return_value=np.zeros(70 * media.RATE)):
+            receipt, _, samples = p.window(case, "target", 60, 61)
+        self.assertEqual(receipt["start_s"], 60)
+        self.assertEqual(len(samples), media.RATE)
 
     @staticmethod
     def document(r):

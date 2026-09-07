@@ -70,7 +70,8 @@ class GrafanaSetupChecks(unittest.TestCase):
                 self.assertNotIn(
                     "__METRICS_PORT__", (folder / "prometheus.yaml").read_text()
                 )
-                self.assertEqual(compose.call_count, 2)
+                self.assertEqual(compose.call_count, 3)
+                self.assertIn("reset-admin-password", compose.call_args_list[1].args)
                 grafana.setup()
                 self.assertEqual(
                     client.post.call_count,

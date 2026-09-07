@@ -72,6 +72,12 @@ def setup():
             except httpx.HTTPError:
                 pass
             time.sleep(1)
+        # Grafana persists its admin credential in the Docker volume. Align it
+        # with the active data directory before creating scoped MCP credentials.
+        compose(
+            "exec", "-T", "grafana", "grafana", "cli", "admin",
+            "reset-admin-password", values["GRAFANA_ADMIN_PASSWORD"],
+        )
         if not values.get("GRAFANA_MCP_TOKEN"):
             response = client.post(
                 "/api/serviceaccounts",
@@ -615,6 +621,25 @@ def backfill():
                     "role": "source", "take_id": take["id"],
                     "family_id": take.get("family_id"),
                     "profile": obs.sound_profile(wav)}, "input", wav.stat().st_mtime)
+        for receipt in (folder / "families").glob("*.json") if (folder / "families").exists() else ():
+            family = json.loads(receipt.read_text())
+            for status, key in (("accepted", "accepted_ranges"), ("rejected", "rejected_ranges"), ("pending", "pending_matches")):
+                for row in family.get(key, []):
+                    obs.emit(folder.name, "family_range", {
+                        "family_id": family["id"], "mapping_id": row["id"], "status": status,
+                        "start_s": row["range_s"][0], "end_s": row["range_s"][1],
+                    }, "historical", receipt.stat().st_mtime)
+            latest = family.get("latest_render", {})
+            if latest:
+                fitted = len(latest.get("arrangement", {}).get("rows", latest.get("mix", {}).get("ranges_s", [])))
+                obs.emit(folder.name, "candidate", {
+                    **latest, "measurements": {"accepted_events": fitted},
+                }, "historical", receipt.stat().st_mtime)
+                verdict = family.get("last_render_verdict")
+                if verdict:
+                    obs.emit(folder.name, "human_review", {
+                        "candidate_id": latest["id"], "verdict": verdict,
+                    }, "historical", receipt.stat().st_mtime)
     print("Historical event receipts queued:", count)
 
 

@@ -91,6 +91,14 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         search.assert_called_once_with("1234567890abcdef", "footsteps")
 
+    def test_family_example_route_records_human_range(self):
+        with patch.object(families, "add_example", return_value={"id": "footsteps"}) as add:
+            response = self.client.post("/api/families/examples", json={
+                "project_id": "1234567890abcdef", "family_id": "footsteps", "range_s": [10, 10.5],
+            })
+        self.assertEqual(response.status_code, 201, response.text)
+        add.assert_called_once_with("1234567890abcdef", "footsteps", [10, 10.5])
+
     def test_prepare_take_and_seek_without_inference(self):
         case = load_case()
         with patch.object(web, "start") as start:
@@ -194,7 +202,25 @@ class HttpChecks(unittest.TestCase):
             self.assertEqual(response.status_code, 409, response.text)
             self.assertIn("Grafana MCP", response.json()["error"])
             start.assert_not_called()
-            with patch.object(web.obs, "config", return_value={"mcp_url": "local"}):
+            with (
+                patch.object(web.obs, "config", return_value={"mcp_url": "local"}),
+                patch(
+                    "orpheus.agent.provider.provider_config",
+                    side_effect=ValueError(
+                        "AGENT_PROVIDER_API_KEY missing from Orpheus/.env"
+                    ),
+                ),
+            ):
+                response = self.client.post(
+                    "/api/run",
+                    json={"project_id": pid, "family_id": family_id, "consent": True},
+                )
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertIn("AGENT_PROVIDER_API_KEY", response.json()["error"])
+            with (
+                patch.object(web.obs, "config", return_value={"mcp_url": "local"}),
+                patch("orpheus.agent.provider.provider_config", return_value=("https://openrouter.ai/api/v1", "test")),
+            ):
                 response = self.client.post(
                     "/api/run",
                     json={"project_id": pid, "family_id": family_id, "consent": True},

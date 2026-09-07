@@ -135,6 +135,32 @@ class FamilyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             families.review(PID, family["id"], ["unknown"], [])
 
+    def test_human_can_add_distinct_confirmed_examples(self):
+        family = families.create(PID, "shoe contact", [0.48, 0.78], defer=True)
+        updated = families.add_example(PID, family["id"], [1.48, 1.78])
+        self.assertEqual(len(updated["accepted_ranges"]), 2)
+        self.assertEqual(updated["accepted_ranges"][1]["kind"], "example")
+        self.assertEqual(updated["accepted_ranges"][1]["decision"], "accepted")
+        with self.assertRaisesRegex(ValueError, "overlaps"):
+            families.add_example(PID, family["id"], [1.5, 1.7])
+
+    def test_ranking_keeps_confirmed_examples_as_separate_prototypes(self):
+        vectors = np.asarray([[1.0, 0.0], [0.0, 1.0], [.707, .707]], dtype=np.float32)
+        accepted = [
+            {"id": "one", "range_s": [2.0, 2.1], "refined_anchor_s": 2.0},
+            {"id": "two", "range_s": [2.2, 2.3], "refined_anchor_s": 2.2},
+        ]
+        with (
+            patch.object(families.np, "load", side_effect=[vectors, np.zeros(3)]),
+            patch.object(families, "_feature_at", side_effect=[(vectors[0], 2), (vectors[1], 2.2)]),
+            patch.object(families, "_refine", side_effect=lambda _p, bounds: bounds[0]),
+            patch.object(families, "HOP_S", 0.5),
+            patch.object(families, "MIN_MATCH_GAP_S", 0.01),
+        ):
+            ranked = families._rank({**self.case, "seconds": 3}, {"cache_key": "x"}, accepted, [], set())
+        self.assertEqual({row["matched_example_id"] for row in ranked[:2]}, {"one", "two"})
+        self.assertGreater(ranked[0]["similarity_score"], ranked[-1]["similarity_score"])
+
     def test_annotated_queue_meets_quality_gate(self):
         family = families.create(PID, "shoe contact", [0.48, 0.78])
         truth = [1.5, 2.5]

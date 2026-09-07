@@ -86,6 +86,18 @@ class FamilyAgentTests(unittest.TestCase):
                 0.025,
             )
 
+    def test_long_movie_case_is_bounded_around_seed(self):
+        samples = np.full(20 * RATE, 0.05, dtype=np.float32)
+        write_wav(self.original, samples)
+        self.case.update(seconds=20.0, video_path=self.folder / "video.mp4")
+        self.family["accepted_ranges"][0]["range_s"] = [16.0, 16.4]
+        with patch.object(family_agent.projects, "ff"):
+            case = family_agent.load_case(PID, FID)
+        self.assertEqual(case["seconds"], family_agent.PREVIEW_SECONDS)
+        self.assertAlmostEqual(case["timeline_offset_s"], 5.0)
+        self.assertEqual(case["accepted_ranges"], [[11.0, 11.4]])
+        self.assertLess((self.folder / "previews" / f"{FID}-original.wav").stat().st_size, self.original.stat().st_size)
+
 
 if __name__ == "__main__":
     unittest.main()

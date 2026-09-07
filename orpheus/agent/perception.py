@@ -70,17 +70,23 @@ def window(case, role, start, end):
         else case["sfx_path"]
     )
     raw = path.read_bytes()
+    finite(start, 0, float("inf"))
+    finite(end, start + 0.02, float("inf"))
+    if end - start > 30:
+        raise ValueError("Invalid finite interval")
     if role == "candidate":
         decoded = subprocess.run(
             [
                 "ffmpeg",
                 "-v",
                 "error",
+                "-ss",
+                str(start),
                 "-i",
                 str(path),
                 "-vn",
                 "-t",
-                "30",
+                str(end - start),
                 "-f",
                 "f32le",
                 "-ac",
@@ -98,16 +104,20 @@ def window(case, role, start, end):
             raise ValueError("Nonfinite decoded audio")
     else:
         a = media.read_audio(path)
-    duration = min(30, len(a) / media.RATE, case["seconds"] if role == "target" else 30)
-    finite(start, 0, duration)
-    finite(end, start + 0.02, float("inf"))
+    duration = len(a) / media.RATE if role != "candidate" else end
+    if role == "target":
+        duration = min(duration, case["seconds"])
+    finite(start, 0, duration if role != "candidate" else float("inf"))
     requested_end = end
     # Media duration is sample-clock truth; callers commonly pass the rounded
     # video duration (for example 8.400s for an 8.383s decoded WAV).
-    end = min(end, duration)
-    finite(end, start + 0.02, duration)
-    lo, hi = round(start * media.RATE), round(end * media.RATE)
-    a = a[lo:hi]
+    end = min(end, duration) if role != "candidate" else end
+    finite(end, start + 0.02, duration if role != "candidate" else end)
+    if role != "candidate":
+        lo, hi = round(start * media.RATE), round(end * media.RATE)
+        a = a[lo:hi]
+    else:
+        lo, hi = round(start * media.RATE), round(end * media.RATE)
     stream = io.BytesIO()
     with wave.open(stream, "wb") as w:
         w.setparams((1, 2, media.RATE, len(a), "NONE", "not compressed"))

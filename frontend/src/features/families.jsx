@@ -121,6 +121,33 @@ function NewFamily({ project, position, disabled, onCreated, defer }) {
   );
 }
 
+function AddExample({ project, family, position, disabled }) {
+  const [start, setStart] = useState(Math.max(0, position - 0.25));
+  const [end, setEnd] = useState(Math.min(project.seconds, position + 0.25));
+  async function save(event) {
+    event.preventDefault();
+    const range = seedRange(start, end, project.seconds);
+    const result = await action(
+      () => post("/api/families/examples", { project_id: project.id, family_id: family.id, range_s: range }),
+      `Confirmed example added at ${time(range[0])}.`,
+    );
+    if (result) await loadFamilies(project.id);
+  }
+  return <form className="seed-editor compact-example" onSubmit={save}>
+    <div className="step-heading"><span className="step-number">A1</span><div>
+      <h2>Add another confirmed example</h2>
+      <p>Bracket a visibly and audibly matching occurrence. Distinct examples remain separate during full-movie ranking.</p>
+    </div></div>
+    <div className="seed-fields">
+      <label>Start (seconds)<input type="number" min="0" max={project.seconds} step="0.01" value={start} disabled={disabled} onChange={(event) => setStart(event.target.value)} /></label>
+      <button type="button" disabled={disabled} onClick={() => setStart(Number(position.toFixed(3)))}>Set start at {time(position)}</button>
+      <label>End (seconds)<input type="number" min="0" max={project.seconds} step="0.01" value={end} disabled={disabled} onChange={(event) => setEnd(event.target.value)} /></label>
+      <button type="button" disabled={disabled} onClick={() => setEnd(Number(position.toFixed(3)))}>Set end at {time(position)}</button>
+    </div>
+    <button className="primary" disabled={disabled}>Add confirmed example</button>
+  </form>;
+}
+
 export function MatchReview({ project, family, disabled, onPreview }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
@@ -281,8 +308,10 @@ function AgentFit({ project, family, disabled, state }) {
         baseline, and uses Grafana MCP evidence before proposing a fitted result.
         It does not search the rest of the movie.
       </p>
-      <p className={state.observability?.enabled ? "agent-ready" : "error"} role="status">
-        {state.observability?.enabled
+      <p className={state.observability?.enabled && state.config?.provider_ready ? "agent-ready" : "error"} role="status">
+        {!state.config?.provider_ready
+          ? "OpenRouter is not configured. Add AGENT_PROVIDER_API_KEY before authorizing a paid fit."
+          : state.observability?.enabled
           ? "Grafana MCP ready · deterministic family evidence will support this run"
           : "Grafana MCP is required. Start the local observability stack first."}
       </p>
@@ -307,7 +336,7 @@ function AgentFit({ project, family, disabled, state }) {
       </label>
       <button
         className="primary"
-        disabled={disabled || !consent || !state.observability?.enabled}
+        disabled={disabled || !consent || !state.observability?.enabled || !state.config?.provider_ready}
       >
         Run agent-coordinated fit
       </button>
@@ -343,6 +372,27 @@ function PartRender({ project, family, disabled, candidate, state, onCandidate, 
       {!approved && <p className="muted">Approve the current part preview to unlock the full-movie search.</p>}
     </section>}
   </>;
+}
+
+function FullMovieRender({ project, family, disabled, candidate, onCandidate }) {
+  const pending = (family.pending_matches || []).length;
+  async function render() {
+    const result = await action(
+      () => post("/api/families/render", { project_id: project.id, family_id: family.id }),
+      "Approved full-movie family render created.",
+    );
+    if (result) onCandidate(result);
+  }
+  const current = candidate?.family_id === family.id ? candidate : family.latest_render;
+  return <section className="family-step">
+    <div className="step-heading"><span className="step-number">04</span><div>
+      <h2>Render approved full movie</h2>
+      <p>The offline renderer fits only reviewed family ranges and preserves every other sample and the picture.</p>
+    </div></div>
+    <button className="primary" disabled={disabled || !family.replacement_take_id || pending > 0} onClick={render}>Render approved full movie</button>
+    {pending > 0 && <p className="muted">Review all {pending} proposed matches before the full-length render.</p>}
+    {current && <Review p={project} c={current} locked={disabled} />}
+  </section>;
 }
 
 export function FamilyWorkbench({
@@ -426,6 +476,7 @@ export function FamilyWorkbench({
           {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} onPreview={onPreview} />}
           {family.scope !== "part" && project.seconds >= 300 && <p className="family-full-link">Review {(family.pending_matches || []).length} proposed matches in <strong>Full Movie</strong>. Open any one there for detailed listening in Part.</p>}
           {family.warning && <p className="warning">{family.warning}</p>}
+          {family.scope === "part" && <AddExample project={project} family={family} position={position} disabled={disabled} />}
           <section className="family-step">
             <div className="step-heading">
               <span className="step-number">{family.scope === "part" ? "02" : "03"}</span>
@@ -445,39 +496,9 @@ export function FamilyWorkbench({
               transport={transport}
             />
           </section>
-          {family.scope === "part" ? <PartRender project={project} family={family} disabled={disabled} candidate={candidate} state={state} onCandidate={onCandidate} onMovieSearch={onMovieSearch} /> : <section className="family-step">
-            <div className="step-heading">
-              <span className="step-number">04</span>
-              <div>
-                <h2>Render and listen</h2>
-                <p>
-                  The renderer ducks accepted moments and overlays the fitted
-                  take. Review the actual export before approval.
-                </p>
-              </div>
-            </div>
-            {family.warnings?.length > 0 && (
-              <ul className="family-warnings">
-                {family.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-              </ul>
-            )}
-            {!family.replacement_take_id && (
-              <p className="muted">Save a replacement take to enable agent fitting.</p>
-            )}
-            <AgentFit
-              project={project}
-              family={family}
-              disabled={disabled || !family.replacement_take_id}
-              state={state}
-            />
-            {candidate && (
-              <Review
-                p={project}
-                c={candidate}
-                locked={disabled}
-              />
-            )}
-          </section>}
+          {family.scope === "part"
+            ? <PartRender project={project} family={family} disabled={disabled} candidate={candidate} state={state} onCandidate={onCandidate} onMovieSearch={onMovieSearch} />
+            : <FullMovieRender project={project} family={family} disabled={disabled} candidate={candidate} onCandidate={onCandidate} />}
         </>
       )}
     </div>
