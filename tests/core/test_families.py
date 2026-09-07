@@ -195,7 +195,7 @@ class FamilyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Approve the fitted part"):
             families.search(PID, family["id"])
         approved = families.get(PID, family["id"])
-        approved["latest_render"] = {"id": "approvedpart", "human_approved": True}
+        approved["approved_agent_fitting"] = {"take_id": take_id}
         families.atomic(families._family_path(PID, family["id"]), approved)
         ready = families.search(PID, family["id"])
         self.assertEqual(ready["scope"], "movie")
@@ -259,6 +259,46 @@ class FamilyTests(unittest.TestCase):
         self.assertEqual(mixed.shape, original.shape)
         np.testing.assert_array_equal(mixed[: round(0.2 * RATE)], original[: round(0.2 * RATE)])
         np.testing.assert_array_equal(mixed[round(0.9 * RATE) :], original[round(0.9 * RATE) :])
+
+    def test_streaming_render_cycles_approved_agent_source_crops(self):
+        replacement = np.zeros(RATE, dtype=np.float32)
+        replacement[round(0.1 * RATE)] = 0.2
+        replacement[round(0.6 * RATE)] = 0.7
+        matches = [
+            {"id": "a", "range_s": [1, 1.3], "refined_anchor_s": 1.1},
+            {"id": "b", "range_s": [2, 2.3], "refined_anchor_s": 2.1},
+        ]
+        variants = [
+            {"kind": "impact", "disposition": "use", "source_range_s": [0.05, 0.2], "source_anchor_s": 0.1},
+            {"kind": "impact", "disposition": "use", "source_range_s": [0.55, 0.7], "source_anchor_s": 0.6},
+        ]
+        output = self.folder / "variant-render.wav"
+        receipt = families._write_selective_wav(
+            self.folder / "original.wav", output, replacement, matches, -12, 0.025, 0,
+            variants=variants,
+        )
+        rendered = families._mono(families._read_pcm(output))
+        self.assertEqual(receipt["learned_source_variants"], 2)
+        self.assertGreater(np.max(np.abs(rendered[round(2 * RATE):round(2.3 * RATE)])),
+                           2 * np.max(np.abs(rendered[round(1 * RATE):round(1.3 * RATE)])))
+
+    def test_agent_fitting_survives_later_full_render_review(self):
+        family = families.create(PID, "shoe", [0.48, 0.78])
+        render_id = "fittedpart"
+        receipt = {
+            "schema": "family-render.v1", "id": render_id, "project_id": PID,
+            "family_id": family["id"], "take_id": "t" * 12,
+            "timeline_offset_s": 12, "human_approved": False,
+            "agent_fitting": {"arrangement": {"rows": [{"kind": "impact"}]}},
+        }
+        families.atomic(self.folder / f"{render_id}.json", receipt)
+        saved = families.get(PID, family["id"])
+        saved["replacement_take_id"] = receipt["take_id"]
+        saved["latest_render_id"] = render_id
+        saved["latest_render"] = receipt
+        families.atomic(families._family_path(PID, family["id"]), saved)
+        reviewed = families.record_render_review(PID, family["id"], render_id, "approve")
+        self.assertEqual(reviewed["approved_agent_fitting"]["agent_fitting"], receipt["agent_fitting"])
 
     def test_waveform_accepts_stereo_render_output(self):
         stereo = np.column_stack((self.audio, self.audio * 0.5))

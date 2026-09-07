@@ -397,7 +397,8 @@ def search(pid, family_id):
     if doc.get("scope") == "part":
         if not doc.get("replacement_take_id"):
             raise ValueError("Assign a replacement SFX before searching the full movie")
-        if not doc.get("latest_render", {}).get("human_approved"):
+        approved = doc.get("approved_agent_fitting", {})
+        if approved.get("take_id") != doc.get("replacement_take_id"):
             raise ValueError("Approve the fitted part before searching the full movie")
     doc["status"] = "searching"
     atomic(_family_path(pid, family_id), doc)
@@ -586,81 +587,6 @@ def _pcm_chunks(path):
             yield offset, values
             offset += len(values)
 
-def _stream_events(original_path, replacement, matches, duck_db, ramp_s, replacement_gain_db):
-    frames, _ = _wav_shape(original_path)
-    duration = frames / RATE
-    source_peak = int(np.argmax(np.abs(replacement)))
-    crop_start = max(0, source_peak - round(PRE_ONSET_S * RATE))
-    part = replacement[crop_start : crop_start + round(WINDOW_S * RATE)].copy()
-    part *= 10 ** (replacement_gain_db / 20)
-    source_anchor = source_peak - crop_start
-    events, dialogue = [], []
-    for item in matches:
-        start_s, end_s = _range(item["range_s"], duration, "match range")
-        anchor_s = _finite(item["refined_anchor_s"], "refined anchor")
-        if not start_s <= anchor_s <= end_s:
-            raise ValueError("Refined anchor outside match")
-        start, end = round(start_s * RATE), round(end_s * RATE)
-        destination = round(anchor_s * RATE) - source_anchor
-        source_skip = max(0, -destination)
-        destination = max(0, destination)
-        count = min(len(part) - source_skip, end - destination, frames - destination)
-        if count < 1:
-            raise ValueError("Replacement falls outside accepted match")
-        ramp = min(round(ramp_s * RATE), (end - start) // 2, count // 2)
-        events.append(
-            {
-                "id": item["id"],
-                "start": start,
-                "end": end,
-                "destination": destination,
-                "source_skip": source_skip,
-                "count": count,
-                "ramp": ramp,
-            }
-        )
-        excerpt = _read_range(original_path, start, end - start)
-        if _possible_dialogue_or_music(excerpt):
-            dialogue.append(item["id"])
-    return part, events, dialogue
-
-def _chunk_components(original, offset, part, events, duck_db):
-    stop = offset + len(original)
-    envelope = np.ones(len(original), dtype=np.float32)
-    layer = np.zeros_like(original, dtype=np.float32)
-    floor = 10 ** (duck_db / 20)
-    for event in events:
-        left, right = max(offset, event["start"]), min(stop, event["end"])
-        if left < right:
-            length = event["end"] - event["start"]
-            curve = np.full(length, floor, dtype=np.float32)
-            ramp = min(event["ramp"], length // 2)
-            if ramp:
-                curve[:ramp] = np.linspace(1, floor, ramp, endpoint=False)
-                curve[-ramp:] = np.linspace(floor, 1, ramp, endpoint=False)
-            a, b = left - offset, right - offset
-            c = left - event["start"]
-            envelope[a:b] = np.minimum(envelope[a:b], curve[c : c + b - a])
-        placement_end = event["destination"] + event["count"]
-        left, right = max(offset, event["destination"]), min(stop, placement_end)
-        if left >= right:
-            continue
-        source = event["source_skip"] + left - event["destination"]
-        placed = part[source : source + right - left].copy()
-        positions = np.arange(left - event["destination"], right - event["destination"])
-        ramp = event["ramp"]
-        if ramp:
-            placed *= np.minimum(
-                1,
-                np.minimum(positions / ramp, (event["count"] - 1 - positions) / ramp),
-            )
-        a, b = left - offset, right - offset
-        if original.ndim == 2:
-            layer[a:b] += placed[:, None]
-        else:
-            layer[a:b] += placed
-    return original * (envelope[:, None] if original.ndim == 2 else envelope), layer
-
 def _write_selective_wav(
     original_path,
     output_path,
@@ -669,41 +595,16 @@ def _write_selective_wav(
     duck_db,
     ramp_s,
     replacement_gain_db,
+    *,
+    variants=None,
+    timeline_offset_s=0,
 ):
-    frames, channels = _wav_shape(original_path)
-    part, events, dialogue = _stream_events(
-        original_path, replacement, matches, duck_db, ramp_s, replacement_gain_db
+    from .family_render import write_selective_wav
+
+    return write_selective_wav(
+        original_path, output_path, replacement, matches, duck_db, ramp_s,
+        replacement_gain_db, variants=variants, timeline_offset_s=timeline_offset_s,
     )
-    scale = 1.0
-    for offset, original in _pcm_chunks(original_path):
-        ducked, layer = _chunk_components(original, offset, part, events, duck_db)
-        positive, negative = layer > 1e-9, layer < -1e-9
-        if np.any(positive):
-            scale = min(scale, float(np.min((0.999 - ducked[positive]) / layer[positive])))
-        if np.any(negative):
-            scale = min(scale, float(np.min((-0.999 - ducked[negative]) / layer[negative])))
-    scale = min(1.0, max(0.0, scale))
-    peak = 0.0
-    with wave.open(str(output_path), "wb") as output:
-        output.setparams((channels, 2, RATE, frames, "NONE", "not compressed"))
-        for offset, original in _pcm_chunks(original_path):
-            ducked, layer = _chunk_components(original, offset, part, events, duck_db)
-            mixed = ducked + layer * scale
-            peak = max(peak, float(np.max(np.abs(mixed))))
-            pcm = np.clip(np.round(mixed * 32768), -32768, 32767).astype("<i2")
-            output.writeframes(pcm.tobytes())
-    if peak >= 1:
-        output_path.unlink(missing_ok=True)
-        raise ValueError("Replacement mix clips; lower the replacement gain")
-    return {
-        "duck_db": duck_db,
-        "ramp_s": ramp_s,
-        "replacement_gain_db": replacement_gain_db,
-        "replacement_peak_protection_db": round(20 * math.log10(max(scale, 1e-9)), 3),
-        "ranges_s": [[event["start"] / RATE, event["end"] / RATE] for event in events],
-        "possible_dialogue_or_music_overlap_ids": dialogue,
-        "warning": "Dialogue/music overlap is a conservative spectral heuristic, not source separation.",
-    }
 
 def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
            ramp_s=0.025, replacement_gain_db=0, case=None, accepted=None,
@@ -729,9 +630,12 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
     folder.mkdir(parents=True, exist_ok=True)
     render_id = uuid.uuid4().hex[:12]
     wav_path, video_path = folder / f"{render_id}.wav", folder / f"{render_id}.mp4"
+    learned = family.get("approved_agent_fitting", {})
+    variants = learned.get("agent_fitting", {}).get("arrangement", {}).get("rows", [])
     mix = _write_selective_wav(
         mix_path, wav_path, _mono(_read_pcm(source_path)), accepted,
-        duck_db, ramp_s, replacement_gain_db,
+        duck_db, ramp_s, replacement_gain_db, variants=variants,
+        timeline_offset_s=float(learned.get("timeline_offset_s", 0)),
     )
     ff(
         "-i", case["video_path"], "-i", wav_path,

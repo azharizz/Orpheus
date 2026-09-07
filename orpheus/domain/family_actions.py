@@ -41,6 +41,8 @@ def add_example(pid, family_id, range_s):
 def assign_take(pid, family_id, take_id):
     takes.validated_audio(pid, family_id, take_id)
     doc = families.get(pid, family_id)
+    if doc.get("replacement_take_id") != take_id:
+        doc.pop("approved_agent_fitting", None)
     doc["replacement_take_id"] = take_id
     doc["updated_at"] = time.time()
     atomic(families._family_path(pid, family_id), doc)
@@ -60,6 +62,13 @@ def record_render_review(pid, family_id, render_id, verdict):
     receipt["human_verdict"] = verdict
     atomic(receipt_path, receipt)
     family["latest_render"]["human_approved"] = verdict == "approve"
+    if verdict == "approve" and receipt.get("agent_fitting"):
+        family["approved_agent_fitting"] = {
+            "render_id": render_id,
+            "take_id": receipt["take_id"],
+            "timeline_offset_s": receipt.get("timeline_offset_s", 0),
+            "agent_fitting": receipt["agent_fitting"],
+        }
     family["last_render_verdict"] = verdict
     family["updated_at"] = time.time()
     atomic(families._family_path(pid, family_id), family)
