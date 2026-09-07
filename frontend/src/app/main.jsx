@@ -22,6 +22,36 @@ export function Disclosure({ title, children }) {
   );
 }
 export const Json = ({ value }) => <pre>{JSON.stringify(value, null, 2)}</pre>;
+function SoundTransition() {
+  const [position, setPosition] = useState(50);
+  return (
+    <aside className="sound-transition" aria-label="Compare the source sound with a Foley replacement performance">
+      <div className="sound-slider" style={{ "--slider-position": `${position}%` }}>
+        <img className="sound-slider-image" src={newProjectAfter} alt="A Foley performer recording a boot step in a tray of grass beside a studio microphone." />
+        <div className="sound-slider-before" aria-hidden="true">
+          <img className="sound-slider-image" src={newProjectBefore} alt="" />
+        </div>
+        <div className="sound-slider-handle" aria-hidden="true"><span>↔</span></div>
+        <label className="sound-slider-control">
+          <span className="sr-only">Source sound to Foley take comparison</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={position}
+            onChange={(event) => setPosition(Number(event.target.value))}
+            aria-label="Source sound to Foley take comparison"
+            aria-valuetext={`${position}% source sound, ${100 - position}% Foley take`}
+          />
+        </label>
+        <div className="sound-slider-labels" aria-hidden="true">
+          <span>Source sound <strong>Location take</strong></span>
+          <span>Foley take <strong>Grass performance</strong></span>
+        </div>
+      </div>
+    </aside>
+  );
+}
 function Import({ config, busy }) {
   const [video, setVideo] = useState(null);
   async function submit(event) {
@@ -44,17 +74,7 @@ function Import({ config, busy }) {
   }
   return (
     <section className="import">
-      <aside className="sound-transition" aria-label="From source sound to a Foley replacement performance">
-        <figure>
-          <img src={newProjectBefore} alt="A location microphone recording footsteps through wet grass." />
-          <figcaption><span>Source sound</span><strong>Location take</strong></figcaption>
-        </figure>
-        <div className="sound-transition-mark" aria-hidden="true"><i /><span>→</span><i /></div>
-        <figure>
-          <img src={newProjectAfter} alt="A Foley performer recording a boot step in a tray of grass beside a studio microphone." />
-          <figcaption><span>Foley take</span><strong>Grass performance</strong></figcaption>
-        </figure>
-      </aside>
+      <SoundTransition />
       <div className="import-introduction">
         <h1>Bring the whole picture.</h1>
         <p>
