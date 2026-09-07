@@ -170,7 +170,7 @@ function Landing({ projects, loading, paused, library, wave, busy, errors }) {
         <section className="landing-hero">
           <PhotographicTitle paused={paused} />
           <div className="landing-statement" id="about">
-            <p>Every movement has a voice. Bring your picture, shape its sound, and give each moment a presence of its own.</p>
+            <p>Let the AI agent inspect unclear effects, use AI-generated audio, find related moments, and fit a replacement easily.</p>
             <SoundSyncMark wave={wave} />
           </div>
         </section>
