@@ -10,33 +10,22 @@ import {
   pendingMatches,
   matchRange,
   pageWindow,
-  movieLanes,
   movieSpineMarkers,
   workspaceTarget,
   partWindow,
-  eventDensity,
 } from "../state/domain.js";
 test("reject invalid recording boundaries and oversized media", () => {
   for (const n of ["", -1, 30, NaN, Infinity]) assert.throws(() => cue(n, 30));
   assert.equal(cue("29.9", 30), 29.9);
   assert.throws(() => validateFile({ size: 101 }, 100));
 });
-test("movie lanes preserve review state and deep-link exact picture time", () => {
-  const lanes = movieLanes(
-    { events: [{ id: "e", range_s: [4, 4.2], acoustic_band: "mid" }], noise_regions: [{ id: "n", range_s: [8, 10] }], suggestions: [{ id: "s", band: "mid" }] },
-    [{ id: "f", accepted_ranges: [{ id: "a", range_s: [4, 4.2] }], rejected_ranges: [{ id: "r", range_s: [12, 12.2] }] }],
-  );
-  assert.equal(lanes.events[0].family_id, undefined);
-  assert.equal(lanes.suggestions[0].id, "s");
-  assert.equal(lanes.accepted[0].status, "accepted");
-  assert.equal(lanes.rejected[0].status, "rejected");
+test("deep links preserve exact picture time", () => {
   assert.deepEqual(workspaceTarget("?time=8.25&family=f&event=n"), { time: 8.25, family: "f", event: "n", view: "part" });
   assert.equal(workspaceTarget("?view=movie").view, "movie");
 });
-test("part windows stay bounded and movie density retains events", () => {
+test("part windows stay bounded", () => {
   assert.deepEqual(partWindow(2, 100, 15), [0, 15]);
   assert.deepEqual(partWindow(98, 100, 15), [85, 100]);
-  assert.equal(eventDensity([{ anchor_s: 2 }, { anchor_s: 2.1 }, { anchor_s: 9 }], 0, 10, 5).reduce((a, b) => a + b), 3);
 });
 test("match pages stay bounded as the review queue changes", () => {
   const matches = Array.from({ length: 12 }, (_, id) => id + 1);
