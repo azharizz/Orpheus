@@ -45,8 +45,8 @@ function SoundTransition() {
           />
         </label>
         <div className="sound-slider-labels" aria-hidden="true">
-          <span>Source sound <strong>Location take</strong></span>
-          <span>Foley take <strong>Grass performance</strong></span>
+          <span>ORIGINAL SOUND</span>
+          <span>FOLEY TAKE</span>
         </div>
       </div>
     </aside>
