@@ -4,6 +4,7 @@ import { useStore, action, api, update } from "../state/store.js";
 import { validateFile, time, label } from "../state/domain.js";
 import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
+import "../styles/preparation.css";
 import "../styles/families.css";
 import "../styles/workspace.css";
 import "../styles/movie.css";
@@ -47,7 +48,7 @@ function Import({ config, busy }) {
           which occurrences deserve a new performance.
         </p>
       </div>
-      <form onSubmit={submit}>
+      <form aria-busy={busy} onSubmit={submit}>
         <label className="file-input">
           <span>Picture</span>
           <strong>{video?.name || "Choose video"}</strong>
@@ -94,6 +95,7 @@ function Import({ config, busy }) {
             your project library
           </a>
         </div>
+        {busy && <p className="import-transfer" role="status"><i aria-hidden="true" />Retaining the original locally…</p>}
       </form>
     </section>
   );
@@ -196,12 +198,29 @@ function ProjectLibrary({ projects, loading }) {
       </section>
   );
 }
+function preparationStage(progress) {
+  if (progress < 10) return ["Securing original", "Retaining the source before any working media is made.", 0];
+  if (progress < 60) return ["Building picture proxy", "Making the browser-ready picture copy.", 1];
+  return ["Preparing analysis sound", "Extracting the full-duration soundtrack for local matching.", 2];
+}
 function Preparing({ project }) {
-  const progress = project.preparation?.progress || 0;
+  const progress = Math.max(0, Math.min(100, Number(project.preparation?.progress) || 0));
+  const [stage, detail, stageIndex] = preparationStage(progress);
   return <section className="import preparing-project" aria-live="polite">
-    <div><span className="eyebrow">LOCAL MEDIA PREPARATION</span><h1>{project.video_name}</h1><p>The byte-for-byte original is safe. Orpheus is building a full-duration proxy and analysis soundtrack in the background.</p></div>
-    <div className="movie-progress" aria-label={`${progress} percent prepared`}><i style={{ width: `${progress}%` }} /></div>
-    <p>{progress}% · Keep this page open or return from the project library later.</p>
+    <div className="preparation-copy">
+      <h1>Preparing your picture.</h1>
+      <p className="preparation-file">{project.video_name}</p>
+      <p>{detail}</p>
+    </div>
+    <div className="preparation-readout" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress} aria-valuetext={`${stage}, ${progress}% complete`} style={{ "--preparation-progress": `${progress}%`, "--preparation-progress-scale": progress / 100 }}>
+      <div className="preparation-view" aria-hidden="true"><i /></div>
+      <div className="preparation-status"><strong>{stage}</strong><output>{progress}%</output></div>
+      <div className="preparation-progress"><i /><b aria-hidden="true" /></div>
+      <ol className="preparation-stages" aria-label="Media preparation stages">
+        {["Original", "Picture", "Sound"].map((name, index) => <li key={name} className={index < stageIndex ? "is-complete" : index === stageIndex ? "is-current" : ""}>{name}</li>)}
+      </ol>
+    </div>
+    <p className="preparation-note">Safe to leave this page. Preparation continues on this computer.</p>
   </section>;
 }
 function PreparationFailed({ project }) {
