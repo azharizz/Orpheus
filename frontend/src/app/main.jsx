@@ -24,9 +24,10 @@ export function Disclosure({ title, children }) {
 export const Json = ({ value }) => <pre>{JSON.stringify(value, null, 2)}</pre>;
 function SoundTransition() {
   const [position, setPosition] = useState(50);
+  const mode = position <= 0 ? "foley" : position >= 100 ? "original" : "split";
   return (
     <aside className="sound-transition" aria-label="Compare the source sound with a Foley replacement performance">
-      <div className="sound-slider" style={{ "--slider-position": `${position}%` }}>
+      <div className="sound-slider" data-mode={mode} style={{ "--slider-position": `${position}%` }}>
         <img className="sound-slider-image" src={newProjectAfter} alt="A Foley performer recording a boot step in a tray of grass beside a studio microphone." />
         <div className="sound-slider-before" aria-hidden="true">
           <img className="sound-slider-image" src={newProjectBefore} alt="" />
@@ -74,7 +75,6 @@ function Import({ config, busy }) {
   }
   return (
     <section className="import">
-      <SoundTransition />
       <div className="import-introduction">
         <h1>Bring the whole picture.</h1>
         <p>
@@ -82,6 +82,7 @@ function Import({ config, busy }) {
           which occurrences deserve a new performance.
         </p>
       </div>
+      <SoundTransition />
       <form aria-busy={busy} onSubmit={submit}>
         <label className="file-input">
           <span>Picture</span>
