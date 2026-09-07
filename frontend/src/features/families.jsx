@@ -389,8 +389,8 @@ function FullMovieRender({ project, family, disabled, candidate, onCandidate }) 
       <h2>Render approved full movie</h2>
       <p>The offline renderer fits only reviewed family ranges and preserves every other sample and the picture.</p>
     </div></div>
-    <button className="primary" disabled={disabled || !family.replacement_take_id || pending > 0} onClick={render}>Render approved full movie</button>
-    {pending > 0 && <p className="muted">Review all {pending} proposed matches before the full-length render.</p>}
+    <button className="primary" disabled={disabled || !family.replacement_take_id} onClick={render}>Preview accepted events</button>
+    {pending > 0 && <p className="muted">Only accepted events will change. All {pending} awaiting-review matches keep their original audio.</p>}
     {current && <Review p={project} c={current} locked={disabled} />}
   </section>;
 }
