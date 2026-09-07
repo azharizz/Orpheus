@@ -36,9 +36,8 @@ export function Workspace({ project: p, state }) {
   const familyPreviews = (familyData?.families || []).map((family) => family.latest_render ? { ...family.latest_render, family_id: family.id } : null).filter(Boolean);
   const all = [movie?.latest_render, ...familyPreviews, ...candidates(p)].filter(Boolean).filter((item, index, items) => items.findIndex((other) => other.id === item.id) === index);
   const [chosen, setChosen] = useState("");
-  const [rendered, setRendered] = useState(null);
-  const candidate = rendered || all.find((item) => item.id === chosen) || familyPreviews.find((item) => item.family_id === activeFamily) || all.find((item) => item.id === p.latest_candidate_id) || all.at(-1);
-  const previews = [rendered, ...all].filter(Boolean).filter((item, index, items) => items.findIndex((other) => other.id === item.id) === index);
+  const candidate = all.find((item) => item.id === chosen) || familyPreviews.find((item) => item.family_id === activeFamily) || all.find((item) => item.id === p.latest_candidate_id) || all.at(-1);
+  const previews = all;
   const [track, setTrack] = useState("original");
   const [position, setPosition] = useState(() => Math.min(p.seconds, target.time));
   const [view, setView] = useState(target.view);
@@ -97,7 +96,6 @@ export function Workspace({ project: p, state }) {
     const selected = typeof value === "string" ? previews.find((item) => item.id === value) : value;
     const id = selected?.id;
     transport.pause();
-    setRendered(typeof value === "string" ? null : value);
     setChosen(id || "");
     if (id) switchTrack("a", selected);
   }
