@@ -6,11 +6,12 @@ import {
   update,
   watchFamilies,
 } from "../state/store.js";
-import { candidates, matchRange, pendingMatches, time, label } from "../state/domain.js";
+import { candidates, matchRange, pendingMatches, time, label, workspaceTarget } from "../state/domain.js";
 import { Transport } from "../media/transport.js";
 import { Evidence } from "../features/evidence.jsx";
 import { useRecording, stopRecording } from "../media/recording.js";
 import { FamilyWorkbench } from "../features/families.jsx";
+import { MovieOverview } from "../features/movie.jsx";
 
 export function Wave({
   pid,
@@ -106,11 +107,13 @@ function familyRanges(data) {
 }
 
 export function Workspace({ project: p, state }) {
+  const target = workspaceTarget();
   const familyData = state.families[p.id];
+  const movie = state.movies[p.id];
   const familyPreviews = (familyData?.families || [])
     .map((family) => family.latest_render)
     .filter(Boolean);
-  const all = [...familyPreviews, ...candidates(p)].filter(
+  const all = [movie?.latest_render, ...familyPreviews, ...candidates(p)].filter(Boolean).filter(
     (item, index, items) =>
       items.findIndex((other) => other.id === item.id) === index,
   );
@@ -127,7 +130,7 @@ export function Workspace({ project: p, state }) {
       items.findIndex((other) => other.id === item.id) === index,
     );
   const [track, setTrack] = useState("original");
-  const [position, setPosition] = useState(0);
+  const [position, setPosition] = useState(() => Math.min(p.seconds, target.time));
   const [playing, setPlaying] = useState(false);
   const [panelView, setPanelView] = useState("workflow");
   const [transport] = useState(() => new Transport());
@@ -295,7 +298,14 @@ export function Workspace({ project: p, state }) {
               : `replacement preview ${candidate?.id}`}
             . Picture time stays fixed when switching.
           </p>
-          <section className="timeline-stack" aria-label="Project soundtracks">
+          <MovieOverview
+            project={p}
+            movie={movie}
+            families={familyData?.families || []}
+            running={state.running}
+            seek={seek}
+          />
+          <section className="timeline-stack" aria-label="Original soundtrack">
             <div className="timeline-track timeline-original">
               <Wave
                 pid={p.id}
@@ -316,42 +326,6 @@ export function Workspace({ project: p, state }) {
                 <span><i className="pending-mark" /> Awaiting review</span>
               </div>
             </div>
-            <div className="timeline-track timeline-replacement">
-              {candidate ? (
-                <Wave
-                  pid={p.id}
-                  role="candidate"
-                  cid={candidate.id}
-                  state={state}
-                  label={`Replacement preview · ${candidate.id}`}
-                  position={position}
-                  duration={p.seconds}
-                />
-              ) : (
-                <div className="wave wave-empty">
-                  <div className="wave-label">
-                    <span>Replacement preview</span>
-                    <span>Not rendered</span>
-                  </div>
-                  <p>Render a reviewed sound family to compare it here.</p>
-                </div>
-              )}
-              {candidate && previews.length > 1 && (
-                <label className="candidate-picker">
-                  Compare another preview
-                  <select
-                    value={candidate.id}
-                    onChange={(event) => chooseCandidate(event.target.value)}
-                  >
-                    {previews.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.id} · {item.engineering_pass ? "measured" : "check flags"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
           </section>
         </div>
       </div>
@@ -364,6 +338,13 @@ export function Workspace({ project: p, state }) {
         <span className="workbench-open-label">Open sound workbench</span>
         <span className="workbench-hide-label">Hide sound workbench</span>
       </button>
+
+      <button className="preview-launcher" type="button" popoverTarget="replacement-wave">Replacement wave</button>
+      <aside id="replacement-wave" className="replacement-overlay" popover="auto" aria-label="Replacement preview waveform">
+        <div className="replacement-overlay-head"><strong>REPLACEMENT PREVIEW</strong><button type="button" popoverTarget="replacement-wave" popoverTargetAction="hide">Hide</button></div>
+        {candidate ? <Wave pid={p.id} role="candidate" cid={candidate.id} state={state} label={`Candidate · ${candidate.id}`} position={position} duration={p.seconds} select={seek} /> : <p className="muted">Render a reviewed sound family to compare it here.</p>}
+        {candidate && previews.length > 1 && <label className="candidate-picker">Compare preview<select value={candidate.id} onChange={(event) => chooseCandidate(event.target.value)}>{previews.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.engineering_pass ? "measured" : "check flags"}</option>)}</select></label>}
+      </aside>
 
       <aside
         id="sound-workbench"

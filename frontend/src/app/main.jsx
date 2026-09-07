@@ -6,6 +6,7 @@ import { Workspace } from "./workspace.jsx";
 import "../styles/style.css";
 import "../styles/families.css";
 import "../styles/workspace.css";
+import "../styles/movie.css";
 import { PhotographicTitle } from "./photographic-title.jsx";
 
 export function Disclosure({ title, children }) {
@@ -195,6 +196,20 @@ function ProjectLibrary({ projects, loading }) {
       </section>
   );
 }
+function Preparing({ project }) {
+  const progress = project.preparation?.progress || 0;
+  return <section className="import preparing-project" aria-live="polite">
+    <div><span className="eyebrow">LOCAL MEDIA PREPARATION</span><h1>{project.video_name}</h1><p>The byte-for-byte original is safe. Orpheus is building a full-duration proxy and analysis soundtrack in the background.</p></div>
+    <div className="movie-progress" aria-label={`${progress} percent prepared`}><i style={{ width: `${progress}%` }} /></div>
+    <p>{progress}% · Keep this page open or return from the project library later.</p>
+  </section>;
+}
+function PreparationFailed({ project }) {
+  return <section className="import preparing-project" role="alert">
+    <div><span className="eyebrow">MEDIA PREPARATION STOPPED</span><h1>{project.video_name}</h1><p>The retained original is safe. Check FFmpeg and available disk space, then import the picture again.</p></div>
+    <a className="primary" href="/workspace">Return to import</a>
+  </section>;
+}
 function App() {
   const state = useStore();
   const [paused, setPaused] = useState(false);
@@ -274,6 +289,10 @@ function App() {
               </p>
               <a href="/?view=projects">Open projects</a>
             </section>
+          ) : project?.status === "preparing" ? (
+            <Preparing project={project} />
+          ) : project?.status === "preparation_failed" ? (
+            <PreparationFailed project={project} />
           ) : project ? (
             <Workspace key={project.id} project={project} state={state} />
           ) : (

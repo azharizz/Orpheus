@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
-from ..config import GRAFANA_PORTS, OBSERVABILITY_ASSETS
+from ..config import GRAFANA_PORTS, OBSERVABILITY_ASSETS, SERVER_PORT
 from . import observability as obs
 
 
@@ -30,6 +30,7 @@ def compose(*args):
 
 
 def setup():
+    dashboard()
     obs.STORE.mkdir(parents=True, exist_ok=True)
     envpath = obs.STORE / ".env"
     if envpath.exists():
@@ -120,6 +121,7 @@ def dashboard():
     orange, green, amber, rose = "#FF5A36", "#9DCFAD", "#EAC17C", "#FF8790"
     prom, loki = "orpheus-prometheus", "orpheus-loki"
     base = '{service_name="orpheus"} | json | project_id=~"$project"'
+    app = f"http://127.0.0.1:{SERVER_PORT}"
 
     def target(expr, ref="A", datasource=prom, *, instant=False, legend=None):
         source_type = "loki" if datasource == loki else "prometheus"
@@ -231,7 +233,7 @@ def dashboard():
     )
     add(
         "Grafana evidence reads", "stat", {"x": 20, "y": 0, "w": 4, "h": 4},
-        [target('orpheus_project_events_total' + project[:-1] + ',event="grafana_investigation"}', instant=True)],
+        [target('sum(orpheus_project_events_total' + project[:-1] + ',event=~"grafana_investigation|movie_grafana_evidence"})', instant=True)],
         options=stat_options,
         field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
     )
@@ -417,7 +419,7 @@ def dashboard():
     )
     add(
         "Grafana MCP", "stat", {"x": 0, "y": 43, "w": 4, "h": 4},
-        [target('(orpheus_project_events_total' + project[:-1] + ',event="grafana_investigation"} > bool 0)', instant=True)], options=stat_options,
+        [target('(sum(orpheus_project_events_total' + project[:-1] + ',event=~"grafana_investigation|movie_grafana_evidence"}) > bool 0)', instant=True)], options=stat_options,
         description="Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
         field={"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}},
     )
@@ -449,6 +451,48 @@ def dashboard():
         field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 4, "unit": "currencyUSD"},
     )
 
+    add(
+        "Movie agent", "stat", {"x": 0, "y": 47, "w": 4, "h": 4},
+        [target("orpheus_movie_agent_state" + project, instant=True)], options=stat_options,
+        description="The movie coordinator delegates only reviewed families with assigned SFX to the paid family agent.",
+        field={"mappings": [{"type": "value", "options": {"-1": {"text": "NOT RUN", "color": amber}, "0": {"text": "RUNNING", "color": amber}, "1": {"text": "REVIEW", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]}},
+    )
+    add(
+        "Movie analysis", "gauge", {"x": 4, "y": 47, "w": 4, "h": 4},
+        [target("orpheus_movie_progress" + project, instant=True)], options=gauge_options,
+        field={"min": 0, "max": 100, "unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 100}]}},
+    )
+    add(
+        "Prepared movie proxy", "text", {"x": 8, "y": 47, "w": 16, "h": 8}, [],
+        description="Read-only 720p project proxy. Open the workspace link for frame-accurate review.",
+        options={"mode": "html", "content": f'<video controls preload="metadata" style="width:100%;height:100%;max-height:240px;background:#050607" src="{app}/projects/${{project}}/video.mp4"></video>'},
+    )
+    add(
+        "Movie waveform · picture position", "barchart", {"x": 0, "y": 55, "w": 16, "h": 9},
+        [target(base + ' | event="movie_signal"', datasource=loki)],
+        description="Downsampled RMS and peak evidence on the picture clock. Click through to inspect the exact moment in Orpheus.",
+        options={"barRadius": 0, "barWidth": .85, "fullHighlight": False, "groupWidth": .9, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}, "orientation": "vertical", "showValue": "never", "stacking": "none", "tooltip": {"mode": "multi", "sort": "desc"}, "xField": "time_s"},
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["time_s", "rms_dbfs", "peak_dbfs"]}}},
+            {"id": "convertFieldType", "options": {"conversions": [
+                {"targetField": "time_s", "destinationType": "numeric"},
+                {"targetField": "rms_dbfs", "destinationType": "numeric"},
+                {"targetField": "peak_dbfs", "destinationType": "numeric"},
+            ]}},
+            {"id": "sortBy", "options": {"fields": [{"field": "time_s", "desc": False}]}},
+        ],
+        field={"unit": "dB", "min": -80, "max": 0},
+        overrides=[{"matcher": {"id": "byName", "options": "rms_dbfs"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}, {"id": "links", "value": [{"title": "Open this movie position", "url": f"{app}/workspace?project=${{project}}&time=${{__data.fields.time_s}}"}]}]}],
+    )
+    add(
+        "Movie findings", "table", {"x": 16, "y": 55, "w": 8, "h": 9},
+        [target(base + ' | event=~"movie_analysis|movie_noise|movie_review|movie_agent_decision"', datasource=loki)],
+        description="Family, noise and human-review decisions with exact workspace deep links.", options=table_options,
+        transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}}, {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "time_s", "start_s", "end_s", "family_id", "decision", "status"]}}}],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "links": [{"title": "Open in Orpheus", "url": f"{app}/workspace?project=${{project}}&time=${{__data.fields.time_s}}&family=${{__data.fields.family_id}}"}]},
+    )
+
     raw_children = []
     for title, expr in (
         ("Candidate and sound measurements", base + ' | event=~"candidate|candidate_timing_measured|sound_event|sound_profile"'),
@@ -459,7 +503,7 @@ def dashboard():
             "id": len(panels) + len(raw_children) + 2,
             "title": title,
             "type": "logs",
-            "gridPos": {"x": 0, "y": 48 + len(raw_children) * 7, "w": 24, "h": 7},
+            "gridPos": {"x": 0, "y": 65 + len(raw_children) * 7, "w": 24, "h": 7},
             "datasource": {"type": "loki", "uid": loki},
             "targets": [target(expr, datasource=loki)],
             "options": {"dedupStrategy": "none", "enableLogDetails": True, "prettifyLogMessage": False, "showCommonLabels": False, "showLabels": False, "showTime": True, "sortOrder": "Descending", "wrapLogMessage": True},
@@ -469,14 +513,14 @@ def dashboard():
         "title": "Raw evidence · open for diagnosis",
         "type": "row",
         "collapsed": True,
-        "gridPos": {"x": 0, "y": 47, "w": 24, "h": 1},
+        "gridPos": {"x": 0, "y": 64, "w": 24, "h": 1},
         "panels": raw_children,
     })
     doc = {
         "uid": "orpheus",
         "title": "Agentic Foley Control Room",
         "schemaVersion": 40,
-        "version": 5,
+        "version": 7,
         "refresh": "5s",
         "time": {"from": "now-14d", "to": "now"},
         "tags": ["orpheus", "agent", "foley", "local"],

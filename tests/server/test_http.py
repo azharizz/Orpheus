@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import httpx
 
-from orpheus.domain import families, projects, takes
+from orpheus.domain import families, movie, projects, takes
 from orpheus.server import web
 from orpheus.server.http import LocalHandler
 from tests.support import load_case
@@ -68,6 +68,23 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["storage"], "local")
         self.assertNotIn("key", response.text.lower())
+
+    def test_movie_routes_require_paid_consent_and_return_review_state(self):
+        source = load_case()
+        doc = projects.create(source["video_path"])
+        pid = doc["id"]
+        response = self.client.get("/api/movie", params={"project_id": pid})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "not_started")
+        with patch.object(movie, "analyze", return_value={"status": "review_required"}):
+            response = self.client.post("/api/movie/analyze", json={"project_id": pid})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["status"], "review_required")
+        self.assertEqual(self.client.post("/api/movie/run", json={"project_id": pid}).status_code, 409)
+        with patch.object(web.obs, "config", return_value={"enabled": True}), patch.object(web, "start_movie") as start_movie:
+            response = self.client.post("/api/movie/run", json={"project_id": pid, "consent": True})
+        self.assertEqual(response.status_code, 202, response.text)
+        start_movie.assert_called_once()
 
     def test_prepare_take_and_seek_without_inference(self):
         case = load_case()
@@ -216,8 +233,8 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.json()["audio_sha256"], rendered["audio_sha256"])
         self.assertEqual(
             self.client.post("/api/assist", json={**payload, "rows": []}).status_code,
-            404,
-        )
+                404,
+            )
         receipt_path = folder / (rendered["id"] + ".json")
         receipt = receipt_path.read_text()
         invalid = json.loads(receipt)
@@ -240,6 +257,19 @@ class HttpChecks(unittest.TestCase):
             response.json()["error"],
             "Invalid input. Check the selected project, values and file types.",
         )
+
+    def test_long_upload_starts_background_preparation(self):
+        case = load_case()
+        project = {"id": "1234567890abcdef", "seconds": 300, "status": "preparing"}
+        with patch.object(projects, "intake", return_value=project), patch.object(web, "start_prepare") as start_prepare:
+            response = self.client.post(
+                "/api/projects?filename=movie.mp4",
+                content=case["video_path"].read_bytes(),
+                headers={"Content-Type": "video/mp4"},
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["project"]["status"], "preparing")
+        start_prepare.assert_called_once_with(project["id"])
 
 
 if __name__ == "__main__":

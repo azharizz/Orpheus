@@ -11,6 +11,7 @@ let state = {
   waveforms: {},
   takes: {},
   families: {},
+  movies: {},
 };
 const listeners = new Set();
 export function update(patch) {
@@ -62,6 +63,9 @@ export async function refresh() {
     activeFamilyProject
       ? api(`/api/families?project_id=${encodeURIComponent(activeFamilyProject)}`)
       : Promise.resolve(null),
+    activeFamilyProject
+      ? api(`/api/movie?project_id=${encodeURIComponent(activeFamilyProject)}`)
+      : Promise.resolve(null),
   ]);
   if (results[0].status === "fulfilled") update({ config: results[0].value });
   if (results[1].status === "fulfilled")
@@ -71,6 +75,9 @@ export async function refresh() {
     update({
       families: { ...state.families, [activeFamilyProject]: results[2].value },
     });
+  }
+  if (activeFamilyProject && results[3].status === "fulfilled") {
+    update({ movies: { ...state.movies, [activeFamilyProject]: results[3].value } });
   }
   refreshing = false;
 }
@@ -94,9 +101,19 @@ export const media = (pid, name) =>
 export function watchFamilies(pid) {
   familyProject = pid;
   if (!state.families[pid]) loadFamilies(pid);
+  if (!state.movies[pid]) loadMovie(pid);
   return () => {
     if (familyProject === pid) familyProject = "";
   };
+}
+export async function loadMovie(pid) {
+  try {
+    const data = await api(`/api/movie?project_id=${encodeURIComponent(pid)}`);
+    update({ movies: { ...state.movies, [pid]: data } });
+    return data;
+  } catch (error) {
+    update({ movies: { ...state.movies, [pid]: { status: "unavailable", error: error.message } } });
+  }
 }
 export async function loadFamilies(pid) {
   try {

@@ -24,6 +24,8 @@ class GrafanaSetupChecks(unittest.TestCase):
             self.assertIn("gauge", kinds)
             self.assertGreaterEqual(kinds.count("table"), 4)
             self.assertIn("Run status", [panel["title"] for panel in doc["panels"]])
+            self.assertIn("Movie waveform · picture position", [panel["title"] for panel in doc["panels"]])
+            self.assertIn("Prepared movie proxy", [panel["title"] for panel in doc["panels"]])
             self.assertNotIn("logs", kinds)
             raw = next(panel for panel in doc["panels"] if panel["type"] == "row")
             self.assertTrue(raw["collapsed"])
@@ -41,6 +43,7 @@ class GrafanaSetupChecks(unittest.TestCase):
             with (
                 patch.object(observability, "STORE", folder),
                 patch.object(observability, "CONFIG", folder / "local.json"),
+                patch.object(grafana, "dashboard") as dashboard,
                 patch.object(grafana, "compose") as compose,
                 patch.object(grafana.httpx, "Client") as http,
             ):
@@ -67,6 +70,7 @@ class GrafanaSetupChecks(unittest.TestCase):
                     2,
                     "Setup must reuse its existing read-only service token",
                 )
+                self.assertEqual(dashboard.call_count, 2)
 
     def test_setup_recovers_existing_service_account_without_token_file(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -88,6 +92,7 @@ class GrafanaSetupChecks(unittest.TestCase):
             with (
                 patch.object(observability, "STORE", folder),
                 patch.object(observability, "CONFIG", folder / "local.json"),
+                patch.object(grafana, "dashboard"),
                 patch.object(grafana, "compose"),
                 patch.object(grafana.httpx, "Client") as http,
             ):

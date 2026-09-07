@@ -10,11 +10,23 @@ import {
   pendingMatches,
   matchRange,
   pageWindow,
+  movieLanes,
+  workspaceTarget,
 } from "../state/domain.js";
 test("reject invalid recording boundaries and oversized media", () => {
   for (const n of ["", -1, 30, NaN, Infinity]) assert.throws(() => cue(n, 30));
   assert.equal(cue("29.9", 30), 29.9);
   assert.throws(() => validateFile({ size: 101 }, 100));
+});
+test("movie lanes preserve review state and deep-link exact picture time", () => {
+  const lanes = movieLanes(
+    { events: [{ id: "e", range_s: [4, 4.2], acoustic_band: "mid" }], noise_regions: [{ id: "n", range_s: [8, 10] }], families: [{ id: "f", band: "mid" }] },
+    [{ id: "f", accepted_ranges: [{ id: "a", range_s: [4, 4.2] }], rejected_ranges: [{ id: "r", range_s: [12, 12.2] }] }],
+  );
+  assert.equal(lanes.events[0].family_id, "f");
+  assert.equal(lanes.accepted[0].status, "accepted");
+  assert.equal(lanes.rejected[0].status, "rejected");
+  assert.deepEqual(workspaceTarget("?time=8.25&family=f&event=n"), { time: 8.25, family: "f", event: "n" });
 });
 test("match pages stay bounded as the review queue changes", () => {
   const matches = Array.from({ length: 12 }, (_, id) => id + 1);

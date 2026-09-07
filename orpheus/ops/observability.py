@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import time
+from contextlib import contextmanager
 
 import httpx
 import numpy as np
@@ -25,14 +26,19 @@ def config():
     return json.loads(CONFIG.read_text())
 
 
+@contextmanager
 def connect():
     STORE.mkdir(exist_ok=True)
     db = sqlite3.connect(DB, timeout=10)
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, payload TEXT NOT NULL, trace TEXT, logs_sent INTEGER DEFAULT 0, trace_sent INTEGER DEFAULT 0)"
-    )
-    return db
+    try:
+        with db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, payload TEXT NOT NULL, trace TEXT, logs_sent INTEGER DEFAULT 0, trace_sent INTEGER DEFAULT 0)"
+            )
+            yield db
+    finally:
+        db.close()
 
 
 def finite(value):
@@ -119,6 +125,8 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
     }
     for key in (
         "candidate_id",
+        "family_id",
+        "event_id",
         "mapping_id",
         "take_id",
         "parent_project_id",
@@ -129,6 +137,7 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         "decision",
         "verdict",
         "role",
+        "kind",
         "category",
         "error_type",
         "failure_code",
@@ -183,8 +192,10 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
     # Free-text descriptions, tool args/results, filenames, URLs and human notes never leave the app.
     for key in (
         "event_count",
+        "time_s",
         "media_s",
         "rms_dbfs",
+        "peak_dbfs",
         "body_dbfs",
         "crest_db",
         "timing_error_ms",
@@ -468,6 +479,19 @@ def metrics_text():
             project["selection"] = r
         if r["event"] == "human_review":
             project["review"] = r
+        if r["event"] == "movie_analysis":
+            project["movie_analysis"] = r
+        if r["event"] == "movie_agent_started":
+            project["movie_state"] = 0
+            project["run_state"] = 0
+            project["run_started_at"] = r["observed_at"]
+            project.pop("run_finished_at", None)
+        if r["event"] == "movie_agent_finished":
+            project["movie_state"] = 1
+            project["run_state"] = 1
+            project["run_finished_at"] = r["observed_at"]
+        if r["event"] == "movie_candidate":
+            project["movie_candidate"] = r
     lines = ["# TYPE orpheus_events_total counter"]
     lines += [f'orpheus_events_total{{event="{key}"}} {n}' for key, n in counts.items()]
     lines += ["# TYPE orpheus_provider_failures_total counter"] + [
@@ -512,7 +536,13 @@ def metrics_text():
             f"orpheus_project_reported_tokens_total{{{labels}}} {project['tokens']}",
             f"orpheus_project_reported_cost_usd_total{{{labels}}} {project['cost']}",
             f"orpheus_project_run_state{{{labels}}} {project['run_state']}",
+            f"orpheus_movie_agent_state{{{labels}}} {project.get('movie_state', -1)}",
         ]
+        analysis = project.get("movie_analysis", {})
+        for key in ("progress", "events", "families", "noise_regions", "duration_s"):
+            value = analysis.get(key)
+            if finite(value):
+                lines.append(f"orpheus_movie_{key}{{{labels}}} {value}")
         if finite(project.get("run_started_at")) and finite(project.get("run_finished_at")):
             lines.append(
                 f"orpheus_project_run_duration_seconds{{{labels}}} "

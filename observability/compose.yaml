@@ -10,6 +10,7 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PANELS_DISABLE_SANITIZE_HTML: "true"
     volumes:
       - grafana:/var/lib/grafana
       - ./provisioning:/etc/grafana/provisioning:ro

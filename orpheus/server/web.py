@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import config
-from ..domain import families, family_agent, media, projects, review, takes
+from ..domain import families, family_agent, media, movie, projects, review, takes
 from ..ops import observability as obs
 from .http import LocalHandler, RequestError
 
@@ -24,6 +24,7 @@ UPLOAD_LOCK = threading.Lock()
 PROCESS = None
 INDEX_THREAD = None
 INDEX_QUEUE = []
+PREP_THREAD = None
 STATIC = config.ROOT / "frontend" / "dist"
 DEFAULT_FEEDBACK = "Create a fitted alternative from these files."
 
@@ -37,7 +38,7 @@ def busy():
             return True
     return (PROCESS is not None and PROCESS.poll() is None) or (
         INDEX_THREAD is not None and INDEX_THREAD.is_alive()
-    )
+    ) or (PREP_THREAD is not None and PREP_THREAD.is_alive())
 
 
 def start_index(project_id):
@@ -64,6 +65,25 @@ def start_index(project_id):
         INDEX_THREAD = threading.Thread(target=run, daemon=True, name="orpheus-index")
         INDEX_THREAD.start()
         return True
+
+
+def start_prepare(project_id):
+    global PREP_THREAD
+    with LOCK:
+        if PREP_THREAD is not None and PREP_THREAD.is_alive():
+            raise BlockingIOError()
+
+        def run():
+            global PREP_THREAD
+            try:
+                projects.prepare(project_id)
+                families.build_index(project_id)
+            finally:
+                with LOCK:
+                    PREP_THREAD = None
+
+        PREP_THREAD = threading.Thread(target=run, daemon=True, name="orpheus-prepare")
+        PREP_THREAD.start()
 
 
 @contextmanager
@@ -100,6 +120,26 @@ def start(project_id, family_id, feedback):
                     "--feedback",
                     feedback,
                 ],
+                cwd=config.ROOT,
+                stdout=output,
+                stderr=output,
+                start_new_session=True,
+            )
+
+
+def start_movie(project_id, feedback):
+    global PROCESS
+    case = projects.load(project_id)
+    if case.get("status") in ("preparing", "preparation_failed"):
+        raise ValueError("Movie media must finish preparation before the agent runs")
+    if not isinstance(feedback, str) or not 1 <= len(feedback) <= config.MAX_FEEDBACK_CHARS:
+        raise ValueError("Feedback must be 1 to 500 characters.")
+    with LOCK:
+        if busy():
+            raise BlockingIOError()
+        with (projects.project_dir(project_id) / "movie-worker.log").open("ab") as output:
+            PROCESS = subprocess.Popen(
+                [sys.executable, "-m", "orpheus.server.movie_worker", project_id, "--feedback", feedback],
                 cwd=config.ROOT,
                 stdout=output,
                 stderr=output,
@@ -220,6 +260,9 @@ class Handler(LocalHandler):
                     "index": families.index_status(pid),
                 }
             )
+        elif route == "/api/movie":
+            pid = parse_qs(parsed.query)["project_id"][0]
+            self.send_json(movie.status(pid))
         elif route == "/api/waveform":
             self.audio_data(route, parse_qs(parsed.query))
         elif route.startswith("/projects/"):
@@ -340,15 +383,13 @@ class Handler(LocalHandler):
                         family_id,
                     )
             else:
-                result = {
-                    "project": projects.create(
-                        path,
-                        context=value("context"),
-                        style=value("style"),
-                        video_name=filename,
-                    )
-                }
-                start_index(result["project"]["id"])
+                project = projects.intake(path, context=value("context"), style=value("style"), video_name=filename)
+                if project["seconds"] >= 300:
+                    start_prepare(project["id"])
+                else:
+                    project = projects.prepare(project["id"])
+                    start_index(project["id"])
+                result = {"project": project}
         self.send_json(result, 201)
 
     def json_action(self, route):
@@ -358,6 +399,10 @@ class Handler(LocalHandler):
             "/api/families",
             "/api/families/review",
             "/api/families/render",
+            "/api/movie/run",
+            "/api/movie/analyze",
+            "/api/movie/review",
+            "/api/movie/render",
             "/api/grafana",
         ):
             raise RequestError("Route not found.", 404)
@@ -393,6 +438,25 @@ class Handler(LocalHandler):
                 },
                 202,
             )
+        elif route == "/api/movie/run":
+            if data.get("consent") is not True:
+                raise RequestError("Confirm the capped paid coordinator run before starting it.", 409)
+            if not obs.config():
+                raise RequestError("Start the local Grafana stack before the movie agent. Grafana evidence is mandatory.", 409)
+            start_movie(data["project_id"], data.get("feedback", "Coordinate this movie from deterministic and Grafana evidence; preserve uncertain sounds for review."))
+            self.send_json({"started": True, "project_id": data["project_id"]}, 202)
+        elif route == "/api/movie/analyze":
+            with mutation():
+                result = movie.analyze(data["project_id"], resume=data.get("resume", True))
+            self.send_json(result, 201)
+        elif route == "/api/movie/review":
+            with mutation():
+                result = movie.review(data["project_id"], data["item_id"], data["decision"])
+            self.send_json(result, 201)
+        elif route == "/api/movie/render":
+            with mutation():
+                result = movie.render_draft(data["project_id"])
+            self.send_json(result, 201)
         elif route == "/api/grafana":
             projects.load(data["project_id"])
             self.send_json(

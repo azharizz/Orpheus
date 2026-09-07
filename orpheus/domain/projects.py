@@ -121,154 +121,104 @@ def frames(case, times, directory):
     return result
 
 
-def create(video, context="", style="", video_name=None):
-    """Create one current-schema, video-first project."""
+def _inspect_upload(video, context, style):
     video = Path(video)
     if len(context) > 240 or len(style) > 240:
         raise ValueError("Context and sound brief are limited to 240 characters each")
-    if video.suffix.lower() not in (
-        ".mp4",
-        ".mov",
-        ".webm",
-        ".mkv",
-    ):
+    if video.suffix.lower() not in (".mp4", ".mov", ".webm", ".mkv"):
         raise ValueError("Unsupported file extension")
     if not video.is_file() or not 0 < video.stat().st_size <= VIDEO_UPLOAD_LIMIT_BYTES:
         raise ValueError("Video must be nonempty and within the configured limit")
-    vp = probe(video)
-    if not any(s["codec_type"] == "video" for s in vp["streams"]):
+    metadata = probe(video)
+    if not any(stream["codec_type"] == "video" for stream in metadata["streams"]):
         raise ValueError("Target must contain video")
-    video_seconds = float(vp["format"]["duration"])
-    if not math.isfinite(video_seconds) or video_seconds <= 0:
-        raise ValueError("Media durations must be finite and positive")
-    seconds = video_seconds
-    if seconds < 0.5:
-        raise ValueError("Video must be at least 0.5 seconds")
-    has_audio = any(s["codec_type"] == "audio" for s in vp["streams"])
-    input_channels = int(
-        next((s.get("channels", 1) for s in vp["streams"] if s["codec_type"] == "audio"), 1)
-    )
+    seconds = float(metadata["format"]["duration"])
+    if not math.isfinite(seconds) or seconds < 0.5:
+        raise ValueError("Video must be at least 0.5 seconds with a finite duration")
+    has_audio = any(stream["codec_type"] == "audio" for stream in metadata["streams"])
+    channels = int(next((stream.get("channels", 1) for stream in metadata["streams"] if stream["codec_type"] == "audio"), 1))
+    pcm_bytes = round(seconds * media.RATE * 2 * (1 + (min(2, channels) if has_audio else 1)))
+    required = video.stat().st_size * 2 + pcm_bytes + FREE_DISK_MARGIN_BYTES
     PROJECTS.mkdir(parents=True, exist_ok=True)
-    pcm_bytes = round(seconds * media.RATE * 2 * (1 + (min(2, input_channels) if has_audio else 1)))
-    required_bytes = video.stat().st_size * 2 + pcm_bytes + FREE_DISK_MARGIN_BYTES
-    if shutil.disk_usage(PROJECTS).free < required_bytes:
+    if shutil.disk_usage(PROJECTS).free < required:
         raise ValueError("Insufficient free disk space for originals and prepared media")
+    return video, metadata, seconds, has_audio, channels
+
+
+def intake(video, context="", style="", video_name=None):
+    """Validate and retain an upload quickly; derived media is prepared in background."""
+    video, metadata, seconds, has_audio, channels = _inspect_upload(video, context, style)
+    PROJECTS.mkdir(parents=True, exist_ok=True)
     pid = uuid.uuid4().hex[:16]
     folder = project_dir(pid)
     folder.mkdir(parents=True)
+    originals = folder / "originals"
+    originals.mkdir()
+    source = originals / ("video" + video.suffix.lower())
+    shutil.copyfile(video, source)
+    doc = {
+        "schema": "orpheus.v3",
+        "id": pid,
+        "seconds": seconds,
+        "input_duration_s": seconds,
+        "context": context,
+        "style": style,
+        "has_original_audio": has_audio,
+        "video_name": (video_name or video.name)[:180],
+        "source_hashes": {"video": digest(source)},
+        "prepared_hashes": {},
+        "rights": "User-supplied local test media; no redistribution licence inferred.",
+        "preparation": {
+            "video_truncated": False,
+            "progress": 0,
+            "original_files": {"video": "originals/" + source.name},
+            "input_channels": channels,
+            "warning": "Private byte-for-byte original retained; proxy and PCM are derived in the background.",
+        },
+        "input_warnings": ["mono_analysis_copy"] + ([] if has_audio else ["no_original_audio"]),
+        "status": "preparing",
+        "turns": [],
+    }
+    atomic(folder / "project.json", doc)
+    return doc
+
+
+def prepare(project_id):
+    """Create full-duration proxy and PCM copies; safe to retry after interruption."""
+    folder = project_dir(project_id)
+    doc = json.loads((folder / "project.json").read_text())
+    source = folder / doc["preparation"]["original_files"]["video"]
+    channels = int(doc["preparation"]["input_channels"])
     try:
-        originals = folder / "originals"
-        originals.mkdir()
-        supplied = [("video", video)]
-        for name, path in supplied:
-            shutil.copyfile(path, originals / (name + path.suffix.lower()))
-        ff(
-            "-protocol_whitelist",
-            "file,pipe",
-            "-i",
-            video,
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0?",
-            "-vf",
-            "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "20",
-            "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            folder / "video.mp4",
-        )
-        if has_audio:
-            ff(
-                "-protocol_whitelist",
-                "file,pipe",
-                "-i",
-                video,
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-ar",
-                48000,
-                "-ac",
-                1,
-                "-c:a",
-                "pcm_s16le",
-                folder / "original.wav",
-            )
-            ff(
-                "-protocol_whitelist",
-                "file,pipe",
-                "-i",
-                video,
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-ar",
-                48000,
-                "-ac",
-                min(2, input_channels),
-                "-c:a",
-                "pcm_s16le",
-                folder / "mix.wav",
-            )
+        doc["status"] = "preparing"
+        doc["preparation"]["progress"] = 10
+        atomic(folder / "project.json", doc)
+        ff("-protocol_whitelist", "file,pipe", "-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", folder / "video.mp4")
+        doc["preparation"]["progress"] = 60
+        atomic(folder / "project.json", doc)
+        if doc["has_original_audio"]:
+            ff("-protocol_whitelist", "file,pipe", "-i", source, "-map", "0:a:0", "-vn", "-ar", media.RATE, "-ac", 1, "-c:a", "pcm_s16le", folder / "original.wav")
+            ff("-protocol_whitelist", "file,pipe", "-i", source, "-map", "0:a:0", "-vn", "-ar", media.RATE, "-ac", min(2, channels), "-c:a", "pcm_s16le", folder / "mix.wav")
         else:
-            ff(
-                "-f",
-                "lavfi",
-                "-i",
-                "anullsrc=r=48000:cl=mono",
-                "-t",
-                seconds,
-                folder / "original.wav",
-            )
+            ff("-f", "lavfi", "-i", f"anullsrc=r={media.RATE}:cl=mono", "-t", doc["seconds"], folder / "original.wav")
             shutil.copyfile(folder / "original.wav", folder / "mix.wav")
-        warnings = ["mono_analysis_copy"]
-        if not has_audio:
-            warnings.append("no_original_audio")
         files = ["video.mp4", "original.wav", "mix.wav"]
-        doc = {
-            "schema": "orpheus.v3",
-            "id": pid,
-            "seconds": seconds,
-            "input_duration_s": float(vp["format"]["duration"]),
-            "context": context,
-            "style": style,
-            "has_original_audio": has_audio,
-            "video_name": (video_name or video.name)[:180],
-            "source_hashes": {
-                k: digest(p) for k, p in supplied
-            },
-            "prepared_hashes": {
-                n: digest(folder / n) for n in files
-            },
-            "rights": "User-supplied local test media; no redistribution licence inferred.",
-            "preparation": {
-                "video_truncated": False,
-                "analysis_format": "Full-duration 48kHz mono PCM16 analysis copy",
-                "mix_format": f"Full-duration 48kHz {min(2, input_channels) if has_audio else 1}-channel PCM16 working mix",
-                "original_files": {
-                    name: "originals/" + name + path.suffix.lower()
-                    for name, path in supplied
-                },
-                "warning": "Private byte-for-byte originals retained; previews and analysis are derived copies. Originals are not served over HTTP.",
-            },
-            "input_warnings": warnings,
-            "status": "ready",
-            "turns": [],
-        }
+        doc["prepared_hashes"] = {name: digest(folder / name) for name in files}
+        doc["preparation"].update(
+            progress=100,
+            analysis_format="Full-duration 48kHz mono PCM16 analysis copy",
+            mix_format=f"Full-duration 48kHz {min(2, channels) if doc['has_original_audio'] else 1}-channel PCM16 working mix",
+        )
+        doc["status"] = "ready"
         atomic(folder / "project.json", doc)
         return doc
     except Exception:
-        # Preserve failed preparation for diagnostics, but never advertise it as runnable.
-        atomic(
-            folder / "preparation_failed.json",
-            {"error": "Media preparation failed; no agent called"},
-        )
+        doc["status"] = "preparation_failed"
+        atomic(folder / "project.json", doc)
+        atomic(folder / "preparation_failed.json", {"error": "Media preparation failed; no agent called"})
         raise
+
+
+def create(video, context="", style="", video_name=None):
+    """Synchronous compatibility for scripts and tests; the web API uses background preparation."""
+    return prepare(intake(video, context, style, video_name)["id"])

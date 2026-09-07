@@ -5,10 +5,10 @@ Orpheus is a local, single-user Foley workbench for finding repeated sound event
 ## Workflow
 
 1. Import one short video or full film. Orpheus preserves the source, creates a browser preview, extracts analysis audio, and builds a cached local sound index.
-2. Mark one clear occurrence of a weak or unwanted sound.
-3. Review acoustically similar moments. Similarity ranks candidates; it never changes audio automatically.
-4. Record or upload one replacement take for that sound family.
-5. Render locally, or explicitly authorize an optional paid agent-fitting pass.
+2. Run the movie coordinator once. It resumes local signal analysis, proposes acoustic families and noise review, queries Grafana history, and samples representative frames.
+3. Review proposed family matches and noise flags. Unknown sounds stay untouched.
+4. Record or upload one replacement take for each family that should change.
+5. Authorize the paid coordinator to delegate reviewed families to the existing bounded AI fitting agent, or build a deterministic reviewed draft locally.
 6. Compare the original and replacement, then approve or reject the exact rendered candidate.
 
 Accepted windows receive bounded gain ramps and the fitted replacement. Every unaccepted part of the soundtrack stays unchanged. Final masters reuse the untouched source video stream.
@@ -43,9 +43,17 @@ npm run build --prefix frontend
 
 Default tests use generated media and scripted provider responses. The annotated benchmark measures the local retrieval queue; neither check certifies artistic quality. Set `ORPHEUS_LIVE_MCP=1` to run the optional local Grafana MCP integration check.
 
+Generate the deterministic 30-minute long-form validation movie outside Git:
+
+```sh
+.venv/bin/python tools/generate_movie_fixture.py
+```
+
+The output lives at `data/fixtures/synthetic-30-minute/` and includes the movie, source WAV, four replacement SFX files, and `ground-truth.json`. Pass `--duration 30` for a quick equivalent smoke fixture.
+
 ## Structure
 
-- `orpheus/domain/`: media, sound-family, take, render, and review logic.
+- `orpheus/domain/`: movie analysis, media, sound-family, take, render, and review logic.
 - `orpheus/agent/`: bounded ADK fitting workflow and provider failover.
 - `orpheus/server/`: loopback API, streamed uploads, and one background worker.
 - `orpheus/ops/`: redacted telemetry, benchmark CLI, and Grafana helpers.

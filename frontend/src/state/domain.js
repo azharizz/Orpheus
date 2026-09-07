@@ -54,3 +54,25 @@ export function matchVolume(level, levels) {
     ? Math.min(1, 10 ** ((Math.min(...finite) - level) / 20))
     : 1;
 }
+
+export function movieLanes(movie = {}, families = [], maxMarks = 360) {
+  const familyByBand = Object.fromEntries((movie.families || []).map((item) => [item.band, item]));
+  const events = movie.events || [];
+  const step = Math.max(1, Math.ceil(events.length / maxMarks));
+  return {
+    events: events.filter((_, index) => index % step === 0).map((item) => ({ ...item, family_id: familyByBand[item.acoustic_band]?.id })),
+    noise: movie.noise_regions || [],
+    accepted: families.flatMap((family) => (family.accepted_ranges || []).map((item) => ({ ...item, family_id: family.id, status: "accepted" }))),
+    rejected: families.flatMap((family) => (family.rejected_ranges || []).map((item) => ({ ...item, family_id: family.id, status: "rejected" }))),
+  };
+}
+
+export function workspaceTarget(search = window.location.search) {
+  const params = new URLSearchParams(search);
+  const at = Number(params.get("time"));
+  return {
+    time: Number.isFinite(at) && at >= 0 ? at : 0,
+    family: params.get("family") || "",
+    event: params.get("event") || "",
+  };
+}
