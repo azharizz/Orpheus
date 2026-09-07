@@ -99,6 +99,22 @@ class HttpChecks(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         add.assert_called_once_with("1234567890abcdef", "footsteps", [10, 10.5])
 
+    def test_candidate_waveform_maps_movie_clock_to_part_clock(self):
+        case = {"id": "1234567890abcdef"}
+        with (
+            patch.object(projects, "load", return_value=case),
+            patch.object(web.review, "candidate", return_value={"timeline_offset_s": 154.34}),
+            patch.object(web.media, "waveform", return_value={"peaks": []}) as waveform,
+        ):
+            response = self.client.get("/api/waveform", params={
+                "project_id": case["id"], "role": "candidate",
+                "candidate_id": "c21e7cc06e83", "start_s": 159.83,
+                "end_s": 169.34, "bins": 100,
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertAlmostEqual(waveform.call_args.args[2], 5.49)
+        self.assertAlmostEqual(waveform.call_args.args[3], 15)
+
     def test_prepare_take_and_seek_without_inference(self):
         case = load_case()
         with patch.object(web, "start") as start:

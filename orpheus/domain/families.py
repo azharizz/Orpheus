@@ -758,6 +758,8 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         "master": master_path.name,
         "wav": wav_path.name,
         "render_mode": "selective_duck_overlay",
+        "timeline_offset_s": case.get("timeline_offset_s", 0),
+        "preview_duration_s": case["seconds"],
         "audio_sha256": _sha256(wav_path),
         "arrangement": {"schema": "family-arrangement.v1", "rows": [
                 {
@@ -783,7 +785,8 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         family["latest_render_id"] = render_id
         family["latest_render"] = {key: receipt[key] for key in (
             "id", "video", "master", "wav", "render_mode", "audio_sha256",
-            "arrangement", "mix", "metrics", "human_approved", "warning")}
+            "timeline_offset_s", "preview_duration_s", "arrangement", "mix",
+            "metrics", "human_approved", "warning")}
         family["updated_at"] = time.time()
         atomic(_family_path(pid, family_id), family)
     obs.emit(pid, "candidate", {

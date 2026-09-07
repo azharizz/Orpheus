@@ -89,16 +89,17 @@ export function Workspace({ project: p, state }) {
     setPosition(start);
     transport.play(end).catch(fail);
   };
-  function switchTrack(next) {
-    transport.switchTrack(next)?.catch(fail);
+  function switchTrack(next, selected = candidate) {
+    transport.switchTrack(next, selected?.timeline_offset_s)?.catch(fail);
     setTrack(next);
   }
   function chooseCandidate(value) {
-    const id = typeof value === "string" ? value : value?.id;
+    const selected = typeof value === "string" ? previews.find((item) => item.id === value) : value;
+    const id = selected?.id;
     transport.pause();
     setRendered(typeof value === "string" ? null : value);
     setChosen(id || "");
-    if (id) switchTrack("a");
+    if (id) switchTrack("a", selected);
   }
 
   return <div className="workspace" ref={bindFamilies}>

@@ -312,12 +312,16 @@ class Handler(LocalHandler):
             raise ValueError("Invalid waveform role")
         if role == "candidate":
             cid = query["candidate_id"][0]
-            review.candidate(case, cid)
+            candidate = review.candidate(case, cid)
             path = projects.project_dir(case["id"]) / (cid + ".wav")
         else:
             path = case["original_path"]
         start_s = float(query.get("start_s", [0])[0])
         end_s = query.get("end_s", [None])[0]
+        if role == "candidate":
+            offset = float(candidate.get("timeline_offset_s", 0))
+            start_s = max(0, start_s - offset)
+            end_s = None if end_s is None else max(0, float(end_s) - offset)
         bins = int(query.get("bins", [600])[0])
         self.send_json(media.waveform(path, bins, start_s, None if end_s is None else float(end_s)))
 

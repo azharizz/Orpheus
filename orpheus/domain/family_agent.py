@@ -288,7 +288,8 @@ def render_selection(
         key: receipt[key]
         for key in (
             "id", "video", "master", "wav", "render_mode", "audio_sha256",
-            "agent_fitting", "mix", "metrics", "human_approved", "warning",
+            "timeline_offset_s", "preview_duration_s", "agent_fitting", "mix",
+            "metrics", "human_approved", "warning",
         )
     }
     family["updated_at"] = time.time()

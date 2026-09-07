@@ -78,3 +78,15 @@ test("bounded playback stops at the end of a match", async () => {
   assert.equal(t.video.paused, true);
   assert.equal(t.stopAt, null);
 });
+
+test("part preview maps global picture time to local audio time", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.video.currentTime = 159.83;
+  t.audio = media();
+  t.switchTrack("a", 154.34);
+  await t.ready();
+  assert.ok(Math.abs(t.audio.currentTime - 5.49) < 1e-9);
+  t.seek(161.52);
+  assert.ok(Math.abs(t.audio.currentTime - 7.18) < 1e-9);
+});

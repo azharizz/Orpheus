@@ -5,6 +5,7 @@ export class Transport {
   audio = null;
   resume = false;
   track = "original";
+  audioOffset = 0;
   operation = 0;
   stopAt = null;
   bindAudio = (node) => {
@@ -16,6 +17,9 @@ export class Transport {
       this.audio = null;
     };
   };
+  audioTime(value = this.video?.currentTime || 0) {
+    return Math.max(0, value - this.audioOffset);
+  }
   async play(stopAt = null) {
     if (!this.video) return;
     this.stopAt = stopAt;
@@ -23,7 +27,7 @@ export class Transport {
     claimMedia(this.video, this.audio);
     try {
       if (this.track !== "original" && this.audio) {
-        this.audio.currentTime = this.video.currentTime;
+        this.audio.currentTime = this.audioTime();
         await this.audio.play();
         if (operation !== this.operation) return;
       }
@@ -43,9 +47,10 @@ export class Transport {
   }
   seek(value) {
     if (this.video) this.video.currentTime = value;
-    if (this.audio && this.track !== "original") this.audio.currentTime = value;
+    if (this.audio && this.track !== "original") this.audio.currentTime = this.audioTime(value);
   }
-  switchTrack(track) {
+  switchTrack(track, audioOffset = this.audioOffset) {
+    this.audioOffset = Number(audioOffset) || 0;
     if (track === this.track) return;
     const resume = this.resume || (!!this.video && !this.video.paused);
     this.pause();
@@ -59,7 +64,7 @@ export class Transport {
   }
   ready() {
     if (!this.video || !this.audio) return;
-    this.audio.currentTime = this.video.currentTime;
+    this.audio.currentTime = this.audioTime();
     if (this.resume) {
       this.resume = false;
       return this.play();
@@ -78,8 +83,8 @@ export class Transport {
       this.video &&
       this.audio &&
       this.track !== "original" &&
-      Math.abs(this.audio.currentTime - this.video.currentTime) > 0.08
+      Math.abs(this.audio.currentTime - this.audioTime()) > 0.08
     )
-      this.audio.currentTime = this.video.currentTime;
+      this.audio.currentTime = this.audioTime();
   }
 }
