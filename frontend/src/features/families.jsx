@@ -30,7 +30,7 @@ export function WorkflowProgress({ activity, waiting, title, candidateId = "" })
   if (!model) return null;
   const candidate = model.candidate || (!model.active ? candidateId : "");
   return <section
-    className={`workflow-progress workflow-progress-${model.status}${model.hasProgress ? "" : " workflow-progress-indeterminate"}`}
+    className={`workflow-progress workflow-progress-${model.status}${model.active && !model.hasProgress ? " workflow-progress-indeterminate" : ""}`}
     role="status"
     aria-live="polite"
     aria-busy={model.active}

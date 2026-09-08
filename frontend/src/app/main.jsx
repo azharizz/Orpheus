@@ -77,10 +77,6 @@ function Import({ config, busy }) {
     <section className="import">
       <div className="import-introduction">
         <h1>Bring the whole picture.</h1>
-        <p>
-          Mark one sound, find related moments across the film, then decide
-          which occurrences deserve a new performance.
-        </p>
       </div>
       <SoundTransition />
       <form aria-busy={busy} onSubmit={submit}>
@@ -275,7 +271,7 @@ function Preparing({ project }) {
   const [stage, detail, stageIndex] = preparationStage(progress);
   return <section className="import preparing-project" aria-live="polite">
     <div className="preparation-copy">
-      <h1>Preparing your picture.</h1>
+      <h1>Preparing your <span className="nowrap">picture<span className="ellipsis" aria-hidden="true"></span></span></h1>
       <p className="preparation-file">{project.video_name}</p>
       <p>{detail}</p>
     </div>

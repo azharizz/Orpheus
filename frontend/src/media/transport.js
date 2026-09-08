@@ -35,6 +35,7 @@ export class Transport {
     } catch (error) {
       if (operation !== this.operation) return;
       this.pause();
+      if (error && error.name === "AbortError") return;
       throw error;
     }
   }

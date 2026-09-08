@@ -243,6 +243,8 @@ class Handler(LocalHandler):
             self.send_file(STATIC, "index.html")
         elif route.startswith("/assets/"):
             self.send_file(STATIC, route.lstrip("/"))
+        elif route in ("/favicon.svg", "/favicon.ico", "/favicon-32.png", "/apple-touch-icon.png"):
+            self.send_file(STATIC, route.lstrip("/"))
         elif route == "/api/config":
             self.send_json(public_config())
         elif route == "/api/projects":

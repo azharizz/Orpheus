@@ -105,8 +105,11 @@
   white-space: nowrap;
   border: 0;
 }
-.import-introduction {
-  max-width: 42ch;
+.import-introduction h1 {
+  margin-bottom: 0;
+  font: 600 clamp(40px, 7vw, 72px) / 0.96 var(--font-display);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 @media (min-width: 768px) {
   .sound-transition {

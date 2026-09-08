@@ -44,3 +44,16 @@ test("agent progress remains intentionally indeterminate while it reports stages
   assert.equal(model.counts, "Cycle 2 · 1 candidate");
   assert.equal(model.statusLabel, "In progress");
 });
+
+test("a finished run is never active, so it must not animate as if still working", () => {
+  const model = workflowProgressModel({
+    status: "review_required",
+    phase: "complete",
+    label: "Candidate ready for human review",
+    cycle: 3,
+    candidate_count: 1,
+  });
+  assert.equal(model.hasProgress, false);
+  assert.equal(model.active, false);
+  assert.equal(model.statusLabel, "Needs review");
+});

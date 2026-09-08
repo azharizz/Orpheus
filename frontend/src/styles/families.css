@@ -297,6 +297,10 @@
 .workflow-progress-track { position: relative; height: 4px; margin-top: 12px; background: var(--rule-subtle); overflow: hidden; }
 .workflow-progress-track i { display: block; height: 100%; background: var(--accent); transition: width 240ms ease; }
 .workflow-progress-indeterminate .workflow-progress-track i { width: 34%; animation: workflow-sweep 1.15s ease-in-out infinite; }
+.workflow-progress-complete .workflow-progress-track i,
+.workflow-progress-review_required .workflow-progress-track i,
+.workflow-progress-failed .workflow-progress-track i,
+.workflow-progress-stale .workflow-progress-track i { animation: none; }
 .workflow-progress-live { display: flex; align-items: center; gap: 7px; margin: 10px 0 0 26px; color: var(--text-secondary); font: 11px/1.3 ui-monospace, monospace; }
 .workflow-progress-live span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: workflow-pulse 1.2s ease-out infinite; }
 @keyframes workflow-pulse { 50% { opacity: .3; transform: scale(.65); } }

@@ -28,9 +28,26 @@
   margin-block: clamp(32px, 8vh, 112px);
 }
 .preparation-copy h1 {
-  max-width: 8ch;
+  max-width: 11ch;
   font: 600 clamp(44px, 5.5vw, 80px) / 0.94 var(--font-display);
   letter-spacing: -0.025em;
+}
+.preparation-copy h1 .nowrap {
+  white-space: nowrap;
+}
+.preparation-copy h1 .ellipsis {
+  display: inline-block;
+  width: 3ch;
+  text-align: left;
+  white-space: pre;
+}
+.preparation-copy h1 .ellipsis::before {
+  content: "...";
+  clip-path: inset(0 100% 0 0);
+  animation: preparation-ellipsis 1.4s steps(3, start) infinite;
+}
+@keyframes preparation-ellipsis {
+  to { clip-path: inset(0 0 0 0); }
 }
 .preparation-file {
   margin-top: 28px;
@@ -176,8 +193,12 @@
   .import-transfer > i::after,
   .preparation-view::before,
   .preparation-view > i,
-  .preparation-progress > b {
+  .preparation-progress > b,
+  .preparation-copy h1 .ellipsis::before {
     animation: none;
+  }
+  .preparation-copy h1 .ellipsis::before {
+    clip-path: none;
   }
   .preparation-progress > i {
     transition: none;

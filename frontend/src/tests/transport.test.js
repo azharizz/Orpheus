@@ -102,3 +102,28 @@ test("queued replacement playback waits for its newly bound audio", async () => 
   assert.equal(t.video.paused, false);
   assert.equal(t.stopAt, 12.5);
 });
+
+test("a superseded play is not an error the reviewer should see", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.audio = media();
+  t.track = "a";
+  t.audio.play = () =>
+    Promise.reject(
+      Object.assign(new Error("The play() request was interrupted by a call to pause()."), {
+        name: "AbortError",
+      }),
+    );
+  await t.play();
+  assert.equal(t.video.paused, true);
+});
+
+test("a real playback failure still reaches the reviewer", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.audio = media();
+  t.track = "a";
+  t.audio.play = () =>
+    Promise.reject(Object.assign(new Error("no decoder"), { name: "NotSupportedError" }));
+  await assert.rejects(() => t.play());
+});
