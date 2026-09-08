@@ -216,11 +216,32 @@ def analyze(pid, *, resume=True):
                 doc["progress"] = round(offset / total * 70, 1)
                 doc["completed_buckets"] = len(rows)
                 _save(pid, doc)
+                obs.emit(pid, "movie_progress", {
+                    "status": "analyzing",
+                    "name": "signal_scan",
+                    "measurements": {
+                        "progress": doc["progress"],
+                        "scanned_s": offset / RATE,
+                        "duration_s": case["seconds"],
+                        "buckets": len(rows),
+                    },
+                })
     doc["waveform"] = _waveform(rows, case["seconds"])
     doc["events"], doc["noise_regions"] = _events(rows, case["seconds"])
     doc["progress"] = 75
     doc["analysis"]["stage"] = "navigation_suggestions"
     _save(pid, doc)
+    obs.emit(pid, "movie_progress", {
+        "status": "analyzing",
+        "name": "navigation_suggestions",
+        "measurements": {
+            "progress": 75,
+            "scanned_s": case["seconds"],
+            "duration_s": case["seconds"],
+            "events": len(doc["events"]),
+            "noise_regions": len(doc["noise_regions"]),
+        },
+    })
     doc["suggestions"] = _suggestions(doc["events"])
     doc["review_queue"] = [
         *doc["suggestions"],
@@ -231,9 +252,19 @@ def analyze(pid, *, resume=True):
     doc["analysis"]["stage"] = "awaiting_part_review" if doc["review_queue"] else "complete"
     doc["finished_at"] = time.time()
     _save(pid, doc)
+    obs.emit(pid, "movie_progress", {
+        "status": doc["status"],
+        "name": doc["analysis"]["stage"],
+        "measurements": {
+            "progress": 100,
+            "scanned_s": case["seconds"],
+            "duration_s": case["seconds"],
+            "events": len(doc["events"]),
+            "suggestions": len(doc["suggestions"]),
+            "noise_regions": len(doc["noise_regions"]),
+        },
+    })
     obs.emit(pid, "movie_analysis", {"status": doc["status"], "measurements": {"progress": 100, "events": len(doc["events"]), "suggestions": len(doc["suggestions"]), "noise_regions": len(doc["noise_regions"]), "duration_s": case["seconds"]}})
-    for item in doc["waveform"]:
-        obs.emit(pid, "movie_signal", item)
     for item in doc["noise_regions"]:
         obs.emit(pid, "movie_noise", {**item, "start_s": item["range_s"][0], "end_s": item["range_s"][1]})
     return doc

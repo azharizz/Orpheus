@@ -13,6 +13,8 @@ import httpx
 from ..config import GRAFANA_PORTS, OBSERVABILITY_ASSETS, SERVER_PORT
 from . import observability as obs
 
+DATASOURCE_UIDS = {"orpheus-prometheus", "orpheus-loki", "orpheus-tempo"}
+
 
 def compose(*args):
     subprocess.run(
@@ -127,6 +129,12 @@ def dashboard():
     orange, green, amber, rose = "#FF5A36", "#9DCFAD", "#EAC17C", "#FF8790"
     prom, loki = "orpheus-prometheus", "orpheus-loki"
     base = '{service_name="orpheus"} | json | project_id=~"$project"'
+    part = (
+        '{service_name="orpheus",event=~"family_range|sound_event|candidate|'
+        'candidate_timing_measured|human_review|selection|match_audition|movie_noise"}'
+        ' | json | project_id=~"$project"'
+        " | start_s >= $part_start | start_s <= $part_end"
+    )
     app = f"http://127.0.0.1:{SERVER_PORT}"
 
     def target(expr, ref="A", datasource=prom, *, instant=False, legend=None):
@@ -148,10 +156,12 @@ def dashboard():
             row["maxLines"] = 500
         return row
 
+    counter = [0]
+
     def add(title, kind, grid, targets, *, description="", options=None,
             field=None, transformations=None, overrides=None, datasource=None):
         panel = {
-            "id": len(panels) + 1,
+            "id": next_id(),
             "title": title,
             "type": kind,
             "gridPos": grid,
@@ -170,6 +180,10 @@ def dashboard():
         panels.append(panel)
         return panel
 
+    def next_id():
+        counter[0] += 1
+        return counter[0]
+
     stat_options = {
         "colorMode": "value",
         "graphMode": "none",
@@ -183,321 +197,397 @@ def dashboard():
         "steps": [{"color": green, "value": None}, {"color": rose, "value": 1}],
     }
     project = '{project_id=~"$project"}'
-
-    add(
-        "Candidate status", "stat", {"x": 0, "y": 0, "w": 4, "h": 4},
-        [target("orpheus_project_candidate_state" + project, instant=True)],
-        options=stat_options,
-        field={
-            "color": {"mode": "thresholds"},
-            "mappings": [{"type": "value", "options": {
-                "-1": {"text": "UNSUITABLE", "color": rose},
-                "0": {"text": "NO SELECTION", "color": amber},
-                "1": {"text": "REVIEW READY", "color": green},
-            }}],
-            "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
-        },
-    )
-    add(
-        "Contacts fitted", "stat", {"x": 4, "y": 0, "w": 4, "h": 4},
-        [target("orpheus_candidate_accepted_events" + project, instant=True)],
-        options=stat_options,
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
-    )
-    add(
-        "Clipped samples", "stat", {"x": 8, "y": 0, "w": 4, "h": 4},
-        [target("orpheus_candidate_clipped_samples" + project, instant=True)],
-        options=stat_options,
-        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds},
-    )
-    add(
-        "Picture integrity", "stat", {"x": 12, "y": 0, "w": 4, "h": 4},
-        [target("orpheus_candidate_picture_unchanged" + project, instant=True)],
-        options=stat_options,
-        field={
-            "color": {"mode": "thresholds"},
-            "mappings": [{"type": "value", "options": {
-                "0": {"text": "CHANGED", "color": rose},
-                "1": {"text": "PRESERVED", "color": green},
-            }}],
-            "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]},
-        },
-    )
-    add(
-        "Human approval", "stat", {"x": 16, "y": 0, "w": 4, "h": 4},
-        [target("orpheus_project_review_state" + project, instant=True)],
-        options=stat_options,
-        field={
-            "color": {"mode": "thresholds"},
-            "mappings": [{"type": "value", "options": {
-                "-1": {"text": "REJECTED", "color": rose},
-                "0": {"text": "PENDING", "color": amber},
-                "1": {"text": "APPROVED", "color": green},
-            }}],
-            "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
-        },
-    )
-    add(
-        "Grafana evidence reads", "stat", {"x": 20, "y": 0, "w": 4, "h": 4},
-        [target('sum(orpheus_project_events_total' + project[:-1] + ',event="grafana_query"})', instant=True)],
-        options=stat_options,
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
-    )
-
     gauge_options = {
         "displayMode": "gradient",
         "minVizHeight": 16,
         "minVizWidth": 8,
-        "namePlacement": "left",
-        "orientation": "horizontal",
+        "orientation": "auto",
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
-        "showUnfilled": True,
+        "showThresholdLabels": False,
+        "showThresholdMarkers": True,
         "sizing": "auto",
         "valueMode": "color",
     }
+    table_options = {
+        "cellHeight": "sm",
+        "footer": {"countRows": False, "fields": "", "reducer": ["sum"], "show": False},
+        "showHeader": True,
+    }
+
     add(
-        "Baseline vs agent", "bargauge", {"x": 0, "y": 4, "w": 12, "h": 8},
+        "Is this film's sound finished?", "stat", {"x": 0, "y": 0, "w": 24, "h": 3},
         [
-            target("orpheus_baseline_integrated_lufs" + project, "A", instant=True, legend="Baseline · LUFS"),
-            target("orpheus_candidate_integrated_lufs" + project, "B", instant=True, legend="Agent · LUFS"),
-            target("orpheus_baseline_true_peak_dbtp" + project, "C", instant=True, legend="Baseline · dBTP"),
-            target("orpheus_candidate_true_peak_dbtp" + project, "D", instant=True, legend="Agent · dBTP"),
+            target('sum(orpheus_family_ranges' + project[:-1] + ',status="pending"})', "A", instant=True, legend="Awaiting your review"),
+            target('sum(orpheus_family_ranges' + project[:-1] + ',status="accepted"})', "B", instant=True, legend="Accepted"),
+            target('sum(orpheus_family_ranges' + project[:-1] + ',status="rejected"})', "C", instant=True, legend="Rejected"),
         ],
-        description="A safer candidate retains every accepted contact while moving true peak farther below 0 dBTP. Loudness remains an audition decision.",
-        options=gauge_options,
-        field={
-            "color": {"mode": "continuous-GrYlRd"},
-            "decimals": 1,
-            "max": 0,
-            "min": -36,
-            "thresholds": {"mode": "absolute", "steps": [
-                {"color": green, "value": None}, {"color": amber, "value": -3}, {"color": rose, "value": -1},
-            ]},
-        },
-    )
-    add(
-        "Loudness safety", "gauge", {"x": 12, "y": 4, "w": 6, "h": 8},
-        [target("orpheus_candidate_true_peak_dbtp" + project, instant=True, legend="True peak")],
-        description="Decoded exported AAC true peak. The warning band starts at -3 dBTP; 0 dBTP is unsafe.",
-        options={"orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}, "showThresholdLabels": True, "showThresholdMarkers": True, "sizing": "auto"},
-        field={
-            "color": {"mode": "thresholds"}, "decimals": 1, "max": 0, "min": -12, "unit": "dB",
-            "thresholds": {"mode": "absolute", "steps": [
-                {"color": green, "value": None}, {"color": amber, "value": -3}, {"color": rose, "value": -1},
-            ]},
-        },
-    )
-    add(
-        "Maximum timing deviation", "gauge", {"x": 18, "y": 4, "w": 6, "h": 8},
-        [target("orpheus_candidate_max_abs_peak_error_ms" + project, instant=True, legend="Peak error")],
-        description="Peak error is relative to reviewed agent anchors, not physical contact ground truth.",
-        options={"orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}, "showThresholdLabels": True, "showThresholdMarkers": True, "sizing": "auto"},
-        field={
-            "color": {"mode": "thresholds"}, "decimals": 1, "max": 100, "min": 0, "unit": "ms",
-            "thresholds": {"mode": "absolute", "steps": [
-                {"color": green, "value": None}, {"color": amber, "value": 30}, {"color": rose, "value": 60},
-            ]},
-        },
-    )
-
-    extract = {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": False}}
-    add(
-        "Contact timing · milliseconds from reviewed anchor", "barchart",
-        {"x": 0, "y": 12, "w": 14, "h": 9},
-        [target(
-            'max by(mapping_id) (max_over_time(' + base
-            + ' | event="sound_event" | unwrap timing_error_ms [$__range]))',
-            datasource=loki,
-            instant=True,
-            legend="{{mapping_id}}",
-        )],
-        description="Each bar is one fitted contact. Zero is aligned; direction shows early or late placement.",
-        options={"barRadius": 0, "barWidth": 0.7, "fullHighlight": False, "groupWidth": 0.7, "legend": {"displayMode": "hidden", "placement": "bottom", "showLegend": False}, "orientation": "horizontal", "showValue": "always", "stacking": "none", "tooltip": {"mode": "single", "sort": "none"}, "xField": "Metric"},
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 1, "min": -60, "max": 60, "unit": "ms"},
-        transformations=[{"id": "seriesToRows", "options": {}}],
-    )
-    add(
-        "Family coverage · picture seconds", "barchart",
-        {"x": 14, "y": 12, "w": 10, "h": 9},
-        [target(base + ' | event="family_range"', datasource=loki)],
-        description="Orange bars are reviewed ranges on the picture clock. Gaps remain untouched; row labels retain accepted or rejected status.",
-        options={"barRadius": 0, "barWidth": 0.8, "fullHighlight": False, "groupWidth": 0.8, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}, "orientation": "horizontal", "showValue": "never", "stacking": "normal", "tooltip": {"mode": "multi", "sort": "none"}, "xField": "mapping_id"},
-        field={"decimals": 2, "min": 0, "unit": "s"},
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["mapping_id", "start_s", "range_duration_s"]}}},
-        ],
+        description="The one question this dashboard answers. Pending are ranked proposals, never decisions. Zero pending does not mean the sound is right; only you can judge that by listening.",
+        options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
+        field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "0",
+               "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}]}},
         overrides=[
-            {"matcher": {"id": "byName", "options": "start_s"}, "properties": [{"id": "displayName", "value": "start"}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "#25272C"}}]},
-            {"matcher": {"id": "byName", "options": "range_duration_s"}, "properties": [{"id": "displayName", "value": "reviewed range"}, {"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}]},
+            {"matcher": {"id": "byName", "options": "Awaiting your review"},
+             "properties": [{"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                 {"color": green, "value": None}, {"color": amber, "value": 1}]}}]},
+            {"matcher": {"id": "byName", "options": "Rejected"},
+             "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#3A3F45"}}]},
         ],
     )
-
-    table_options = {"cellHeight": "sm", "footer": {"countRows": False, "fields": "", "reducer": ["sum"], "show": False}, "showHeader": True}
     add(
-        "Run status", "stat", {"x": 0, "y": 21, "w": 4, "h": 7},
-        [target("orpheus_project_run_state" + project, instant=True)],
-        description="A terminal session_saved or failed event closes the run. Human review is tracked separately.",
-        options=stat_options,
+        "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
+        description="The picture this project replaces sound inside. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
+        options={"mode": "html", "content": (
+            '<video controls preload="metadata" style="width:100%;height:100%;max-height:340px;'
+            'background:#050607;border-radius:2px" '
+            f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
+        )},
+    )
+    add(
+        "Last recorded run", "stat", {"x": 14, "y": 3, "w": 10, "h": 4},
+        [
+            target("orpheus_candidate_clipped_samples" + project, "A", instant=True, legend="Clipped samples"),
+            target("orpheus_project_candidate_state" + project, "B", instant=True, legend="Candidate"),
+            target("orpheus_project_review_state" + project, "C", instant=True, legend="Human verdict"),
+        ],
+        description="State of the LAST recorded run in the selected time range, not a live check of the render you are watching. Clipped samples above zero must be re-rendered. A verdict here is a past decision bound to one audio hash; it never transfers to a new render.",
+        options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
         field={
             "color": {"mode": "thresholds"},
+            "decimals": 0,
+            "noValue": "NO RUN",
             "mappings": [{"type": "value", "options": {
-                "-1": {"text": "FAILED", "color": rose},
-                "0": {"text": "INCOMPLETE", "color": amber},
-                "1": {"text": "COMPLETED", "color": green},
+                "-1": {"text": "UNSUITABLE", "color": rose},
+                "0": {"text": "NOT DECIDED", "color": amber},
+                "1": {"text": "PASSED LAST RUN", "color": green},
             }}],
             "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}]},
         },
+        overrides=[{
+            "matcher": {"id": "byName", "options": "Clipped samples"},
+            "properties": [
+                {"id": "mappings", "value": []},
+                {"id": "thresholds", "value": safe_thresholds},
+            ],
+        }],
     )
     add(
-        "Agent decision ledger", "table", {"x": 4, "y": 21, "w": 10, "h": 7},
-        [target(base + ' | event=~"deterministic_baseline|grafana_investigation|candidate|candidate_timing_measured|selection|human_review"', datasource=loki)],
-        description="Discrete, timestamped evidence gates. Rows never imply that a completed step is still running.",
-        options=table_options,
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "topic", "status", "candidate_id", "decision"]}}},
-            {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": False}]}},
-        ],
-        datasource=loki,
-    )
-    add(
-        "Provider execution", "table", {"x": 14, "y": 21, "w": 10, "h": 7},
-        [target(base + ' | event=~"model_failed|model_response|audio_failed|audio_response"', datasource=loki)],
-        description="One completed response or failure per row. elapsed_s is real request duration, not a stretched dashboard state.",
-        options=table_options,
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "requested_model", "served_model", "status_code", "elapsed_s"]}}},
-            {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": False}]}},
-        ],
-        datasource=loki,
-    )
-
-    add(
-        "Candidate evidence", "table", {"x": 0, "y": 28, "w": 12, "h": 8},
-        [target(base + ' | event=~"candidate|candidate_timing_measured|candidate_audio_review"', datasource=loki)],
-        description="Render, engineering measurement and acoustic review remain separate evidence records.",
-        options=table_options,
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "candidate_id", "status", "integrated_lufs", "true_peak_dbtp", "clipped_samples", "max_abs_peak_error_ms", "picture_unchanged"]}}},
-        ],
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
-    )
-    add(
-        "Failure taxonomy", "bargauge", {"x": 12, "y": 28, "w": 6, "h": 8},
-        [target('label_replace(orpheus_project_provider_events_total' + project[:-1] + ',outcome="failed"}, "provider", "$1", "model", "([^/]+).*" )', instant=True, legend="{{provider}}")],
-        description="Failed provider requests grouped by requested model.",
-        options={**gauge_options, "orientation": "horizontal"},
-        field={"color": {"mode": "fixed", "fixedColor": rose}, "decimals": 0, "min": 0},
-    )
-    add(
-        "Tool execution", "bargauge", {"x": 18, "y": 28, "w": 6, "h": 8},
-        [target('orpheus_project_tool_events_total' + project, instant=True, legend="{{tool}} · {{outcome}}")],
-        description="Completed and failed tool responses, normalized at the telemetry boundary.",
-        options=gauge_options,
-        field={"color": {"mode": "continuous-GrYlRd"}, "decimals": 0, "min": 0},
-    )
-    add(
-        "Grafana MCP evidence", "table", {"x": 0, "y": 36, "w": 10, "h": 7},
-        [target(base + ' | event=~"grafana_query|grafana_investigation"', datasource=loki)],
-        description="Receipts prove that the agent queried project history before rendering and candidate evidence after measurement.",
-        options=table_options,
-        transformations=[
-            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "topic", "status", "candidate_id", "receipt_id"]}}},
-        ],
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
-    )
-    add(
-        "Experiment history", "table", {"x": 10, "y": 36, "w": 14, "h": 7},
-        [target(base + ' | event=~"take_recorded|take_experiment|selection|human_review|candidate_timing_measured"', datasource=loki)],
-        description="Immutable measurements and human decisions. Model observations remain hypotheses until reviewed.",
-        options=table_options,
-        transformations=[
-            extract,
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "candidate_id", "take_id", "decision", "verdict", "integrated_lufs", "true_peak_dbtp", "clipped_samples", "max_abs_peak_error_ms"]}}},
-        ],
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False}},
-    )
-    add(
-        "Grafana MCP", "stat", {"x": 0, "y": 43, "w": 4, "h": 4},
-        [target('clamp_max(orpheus_project_events_total' + project[:-1] + ',event="grafana_query"}, 1)', instant=True)], options=stat_options,
-        description="Verified when the agent has completed at least one successful project-scoped Grafana evidence read.",
-        field={"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}},
-    )
-    add(
-        "Collector", "stat", {"x": 4, "y": 43, "w": 4, "h": 4},
-        [target('up{job="orpheus"}', instant=True)], options=stat_options,
-        field={"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": rose}, "1": {"text": "ONLINE", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]}},
-    )
-    add(
-        "Pending exports", "stat", {"x": 8, "y": 43, "w": 4, "h": 4},
-        [target("orpheus_export_pending", instant=True)], options=stat_options,
-        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds},
-    )
-    add(
-        "Provider failures", "stat", {"x": 12, "y": 43, "w": 4, "h": 4},
-        [target("orpheus_project_provider_failures_total" + project, instant=True)], options=stat_options,
-        field={"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}, {"color": amber, "value": 1}, {"color": rose, "value": 3}]}},
-    )
-    add(
-        "Run duration", "stat", {"x": 16, "y": 43, "w": 4, "h": 4},
-        [target("orpheus_project_run_duration_seconds" + project, instant=True)], options=stat_options,
-        description="Wall-clock time from deterministic baseline to the terminal session event.",
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 1, "unit": "s"},
-    )
-    add(
-        "Reported cost", "stat", {"x": 20, "y": 43, "w": 4, "h": 4},
-        [target("orpheus_project_reported_cost_usd_total" + project, instant=True)], options=stat_options,
-        description="Only provider-reported cost. Missing receipts are not zero cost.",
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 4, "unit": "currencyUSD"},
-    )
-
-    add(
-        "Full-movie searches", "stat", {"x": 0, "y": 47, "w": 4, "h": 4},
-        [target('sum(orpheus_project_events_total' + project[:-1] + ',event="family_movie_search"})', instant=True)], options=stat_options,
-        description="Approved part families propagated through deterministic full-movie query-by-example search.",
-        field={"color": {"mode": "fixed", "fixedColor": orange}, "decimals": 0},
-    )
-    add(
-        "Movie analysis", "gauge", {"x": 4, "y": 47, "w": 4, "h": 4},
-        [target("orpheus_movie_progress" + project, instant=True)], options=gauge_options,
-        field={"min": 0, "max": 100, "unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 100}]}},
-    )
-    add(
-        "Prepared movie proxy", "text", {"x": 8, "y": 47, "w": 16, "h": 8}, [],
-        description="Read-only 720p project proxy. Open the workspace link for frame-accurate review.",
-        options={"mode": "html", "content": f'<video controls preload="metadata" style="width:100%;height:100%;max-height:240px;background:#050607" src="{app}/projects/${{project}}/video.mp4"></video>'},
-    )
-    add(
-        "Movie waveform · picture position", "barchart", {"x": 0, "y": 55, "w": 16, "h": 9},
-        [target(base + ' | event="movie_signal"', datasource=loki)],
-        description="Downsampled RMS and peak evidence on the picture clock. Click through to inspect the exact moment in Orpheus.",
-        options={"barRadius": 0, "barWidth": .85, "fullHighlight": False, "groupWidth": .9, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}, "orientation": "vertical", "showValue": "never", "stacking": "none", "tooltip": {"mode": "multi", "sort": "desc"}, "xField": "time_s"},
+        "Sound families in this film", "barchart", {"x": 14, "y": 7, "w": 10, "h": 7},
+        [target(base + ' | event="family_range"', datasource=loki)],
+        description="How many occurrences each sound family has, split by decision. Pending are proposals awaiting your review, never approvals.",
+        options={"barRadius": 0, "barWidth": .7, "fullHighlight": False, "groupWidth": .8, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True}, "orientation": "horizontal", "showValue": "auto", "stacking": "normal", "tooltip": {"mode": "multi", "sort": "none"}, "xField": "status"},
         transformations=[
             {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
-            {"id": "filterFieldsByName", "options": {"include": {"names": ["time_s", "rms_dbfs", "peak_dbfs"]}}},
-            {"id": "convertFieldType", "options": {"conversions": [
-                {"targetField": "time_s", "destinationType": "numeric"},
-                {"targetField": "rms_dbfs", "destinationType": "numeric"},
-                {"targetField": "peak_dbfs", "destinationType": "numeric"},
-            ]}},
-            {"id": "sortBy", "options": {"fields": [{"field": "time_s", "desc": False}]}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["status", "mapping_id"]}}},
+            {"id": "groupBy", "options": {"fields": {
+                "status": {"aggregations": [], "operation": "groupby"},
+                "mapping_id": {"aggregations": ["count"], "operation": "aggregate"},
+            }}},
+            {"id": "sortBy", "options": {"fields": [{"field": "status", "desc": False}]}},
         ],
-        field={"unit": "dB", "min": -80, "max": 0},
-        overrides=[{"matcher": {"id": "byName", "options": "rms_dbfs"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": orange}}, {"id": "links", "value": [{"title": "Inspect this part", "url": f"{app}/workspace?project=${{project}}&view=part&time=${{__data.fields[\"time_s\"]}}"}]}]}],
+        field={"unit": "short", "decimals": 0, "custom": {"fillOpacity": 80, "lineWidth": 0}, "links": [
+            {"title": "Review these matches in Orpheus", "url": f"{app}/workspace?project=${{project}}&view=review"},
+        ]},
+        datasource=loki,
     )
     add(
-        "Movie findings", "table", {"x": 16, "y": 55, "w": 8, "h": 9},
-        [target(base + ' | event=~"movie_analysis|movie_noise|movie_review|family_movie_search|human_review"', datasource=loki)],
-        description="Movie cues, approved-family searches and human decisions with exact Part links.", options=table_options,
-        transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}}, {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "time_s", "start_s", "end_s", "family_id", "decision", "status"]}}}],
-        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "links": [{"title": "Inspect in Part", "url": f"{app}/workspace?project=${{project}}&view=part&time=${{__data.fields[\"start_s\"]}}&family=${{__data.fields[\"family_id\"]}}"}]},
+        "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
+        description="Top: the whole film at coarse resolution, with the selected Part shaded. Bottom: the same audio zoomed to $part_start-$part_end s, where individual contacts become visible. Both markers follow the player. Amplitude is signal level only \u2014 a tall peak is not a footstep and a flat stretch is not proven silence.",
+        options={"mode": "html", "content": (
+            '<div id="owave" style="height:100%;display:flex;flex-direction:column;gap:4px;'
+            'font:400 11px/1.3 system-ui;color:#8A9099">'
+            '<div id="owave-note">Loading measured waveform\u2026</div>'
+            '<canvas id="owave-all" style="width:100%;height:34%"></canvas>'
+            '<div id="owave-zl" style="color:#6E747C"></div>'
+            '<canvas id="owave-zoom" style="width:100%;flex:1;min-height:60px"></canvas>'
+            '</div>'
+            '<script>(function(){'
+            'var note=document.getElementById("owave-note"),zl=document.getElementById("owave-zl"),'
+            'ca=document.getElementById("owave-all"),cz=document.getElementById("owave-zoom");'
+            'if(!ca)return;'
+            'if(window.__owaveTimer)clearInterval(window.__owaveTimer);'
+            'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
+            'return m?decodeURIComponent(m[1]):fb;}'
+            f'var app="{app}",pid="${{project}}";'
+            'var zs=Number(urlv("part_start","${part_start}"))||0,'
+            'ze=Number(urlv("part_end","${part_end}"))||0;'
+            'var all=null,dur=0,zoom=null;'
+            'function vid(){var v=document.querySelectorAll("video");return v.length?v[0]:null;}'
+            'function paint(c,peaks,t0,t1,shade){'
+            'var r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;'
+            'c.width=r.width*d;c.height=r.height*d;'
+            'var x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,r.width,r.height);'
+            'if(!peaks||!peaks.length)return;'
+            'var mid=r.height/2,n=peaks.length,span=t1-t0;'
+            'if(shade&&span>0&&ze>zs){'
+            'var a=Math.max(0,(zs-t0)/span)*r.width,b=Math.min(1,(ze-t0)/span)*r.width;'
+            'x.fillStyle="rgba(255,90,54,0.16)";x.fillRect(a,0,Math.max(2,b-a),r.height);}'
+            'x.strokeStyle="#2A2E33";x.beginPath();x.moveTo(0,mid);x.lineTo(r.width,mid);x.stroke();'
+            'x.fillStyle="#FF5A36";'
+            'for(var i=0;i<n;i++){var h=Math.max(0.5,Math.min(1,peaks[i])*mid*0.95);'
+            'x.fillRect(i*r.width/n,mid-h,Math.max(1,r.width/n-0.4),h*2);}'
+            'var v=vid();'
+            'if(v&&span>0){var ct=v.currentTime;'
+            'if(ct>=t0&&ct<=t1){var px=(ct-t0)/span*r.width;'
+            'x.strokeStyle="#9DCFAD";x.lineWidth=2;x.beginPath();x.moveTo(px,0);x.lineTo(px,r.height);x.stroke();}}'
+            '}'
+            'function draw(){paint(ca,all,0,dur,true);if(zoom)paint(cz,zoom,zs,ze,false);}'
+            'var busy=false;'
+            'function tick(){'
+            'var a=Number(urlv("part_start",zs))||0,b=Number(urlv("part_end",ze))||0;'
+            'if(b>a&&(a!==zs||b!==ze)&&!busy){busy=true;zs=a;ze=b;'
+            'get(zs,Math.min(ze,dur),900).then(function(j){zoom=j.peaks||[];'
+            'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
+            '+(j.bin_duration_s||0).toFixed(3)+" s per bin";busy=false;draw();})'
+            '.catch(function(){busy=false;});}'
+            'draw();}'
+            'function get(a,b,bins){return fetch(app+"/api/waveform?project_id="+pid'
+            '+"&role=original&start_s="+a+(b?"&end_s="+b:"")+"&bins="+bins)'
+            '.then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});}'
+            'get(0,0,900).then(function(j){all=j.peaks||[];dur=j.duration_s||j.end_s||0;'
+            'if(!(ze>zs)){zs=0;ze=Math.min(dur,60);}'
+            'note.textContent="Whole film \u00b7 "+Math.round(dur)+" s at "'
+            '+(dur/Math.max(1,all.length)).toFixed(2)+" s per bin";'
+            'draw();return get(zs,Math.min(ze,dur),900);})'
+            '.then(function(j){zoom=j.peaks||[];'
+            'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
+            '+(j.bin_duration_s||0).toFixed(3)+" s per bin";'
+            'draw();window.__owaveTimer=setInterval(tick,250);})'
+            '.catch(function(e){note.textContent="Waveform unavailable ("+e.message'
+            '+"). Orpheus must be running; this is not evidence of silence.";});'
+            '})();</script>'
+        )},
     )
+    add(
+        "How sure is the matcher, moment by moment", "text", {"x": 0, "y": 22, "w": 24, "h": 9}, [],
+        description="Each bar is a proposed occurrence of a sound family at its real position in the film, with height showing the matcher's cosine similarity to your confirmed examples. Grey behind it is the density of detected acoustic events, which is texture, not sound identity. Similarity is ranking evidence only \u2014 never a probability, never an approval. It follows the player above.",
+        options={"mode": "html", "content": (
+            '<div id="osure" style="height:100%;display:flex;flex-direction:column;gap:5px;'
+            'font:400 11px/1.35 system-ui;color:#8A9099">'
+            '<div id="osure-head" style="font:600 14px/1.2 system-ui;color:#E6E8EA">Loading\u2026</div>'
+            '<canvas id="osure-c" style="width:100%;flex:1;min-height:80px"></canvas>'
+            '<div style="display:flex;gap:12px;font-size:10px;align-items:center">'
+            '<span style="color:#EAC17C">\u25ae proposal (height = similarity)</span>'
+            '<span style="color:#9DCFAD">\u25ae accepted</span>'
+            '<span style="color:#4A4F55">\u25ae detected events</span>'
+            '<span id="osure-sub" style="margin-left:auto;color:#6E747C"></span></div>'
+            '</div>'
+            '<script>(function(){'
+            'var c=document.getElementById("osure-c"),head=document.getElementById("osure-head"),'
+            'sub=document.getElementById("osure-sub");'
+            'if(!c)return;'
+            'if(window.__osureTimer)clearInterval(window.__osureTimer);'
+            f'var app="{app}";'
+            'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
+            'return m?decodeURIComponent(m[1]):fb;}'
+            'var pid=urlv("project","${project}");'
+            'var props=[],dens=[],dur=0,lo=1,hi=1;'
+            'function vid(){var v=document.querySelectorAll("video");return v.length?v[0]:null;}'
+            'function draw(){'
+            'var r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;'
+            'c.width=r.width*d;c.height=r.height*d;'
+            'var x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);'
+            'x.fillStyle="#101215";x.fillRect(0,0,r.width,r.height);'
+            'if(!dur){return;}'
+            'var base=r.height-14;'
+            'if(dens.length){var mx=Math.max.apply(null,dens)||1;x.fillStyle="#4A4F55";'
+            'for(var i=0;i<dens.length;i++){var h=dens[i]/mx*base*0.55;'
+            'x.fillRect(i*r.width/dens.length,base-h,Math.max(1,r.width/dens.length),h);}}'
+            'var span=hi-lo||1;'
+            'for(var j=0;j<props.length;j++){var m=props[j];'
+            'var px=m.t/dur*r.width;'
+            'var norm=(m.s-lo)/span;var h=Math.max(3,(0.18+norm*0.82)*base);'
+            'x.fillStyle=m.k==="accepted"?"#9DCFAD":"#EAC17C";'
+            'x.fillRect(px-1.5,base-h,3,h);}'
+            'x.strokeStyle="#2A2E33";x.beginPath();x.moveTo(0,base);x.lineTo(r.width,base);x.stroke();'
+            'var v=vid();'
+            'if(v){var px2=Math.min(1,v.currentTime/dur)*r.width;'
+            'x.strokeStyle="#E6E8EA";x.lineWidth=1.5;x.beginPath();'
+            'x.moveTo(px2,0);x.lineTo(px2,base);x.stroke();'
+            'var near=null,best=1e9;'
+            'for(var q=0;q<props.length;q++){var dd=Math.abs(props[q].t-v.currentTime);'
+            'if(dd<best){best=dd;near=props[q];}}'
+            'var mm=Math.floor(v.currentTime/60),ss=("0"+Math.floor(v.currentTime%60)).slice(-2);'
+            'if(near&&best<=12){head.textContent=mm+":"+ss+" \u2014 nearest proposal scores "'
+            '+near.s.toFixed(3)+(near.k==="accepted"?" (accepted)":" (awaiting review)");'
+            'head.style.color=near.k==="accepted"?"#9DCFAD":"#EAC17C";}'
+            'else{head.textContent=mm+":"+ss+" \u2014 no proposal near this moment";'
+            'head.style.color="#8A9099";}}'
+            'x.fillStyle="#6E747C";x.font="10px system-ui";'
+            'x.fillText("0:00",2,r.height-2);x.textAlign="right";'
+            'x.fillText(Math.floor(dur/60)+" min",r.width-2,r.height-2);x.textAlign="left";'
+            '}'
+            'function ready(){'
+            'if(props.length){var sc=props.map(function(m){return m.s;});'
+            'lo=Math.min.apply(null,sc);hi=Math.max.apply(null,sc);'
+            'sub.textContent=props.length+" proposals \u00b7 similarity "'
+            '+lo.toFixed(3)+"\u2013"+hi.toFixed(3)+" \u00b7 "+dens.reduce(function(a,b){return a+b;},0)'
+            '+" detected events";}'
+            'draw();window.__osureTimer=setInterval(draw,250);}'
+            'fetch(app+"/api/families?project_id="+pid).then(function(r){return r.json();})'
+            '.then(function(j){var fs=Array.isArray(j)?j:(j.families||[]);'
+            'fs.forEach(function(f){'
+            '(f.accepted_ranges||[]).forEach(function(m){if(m.range_s&&m.similarity_score!=null)'
+            'props.push({t:m.refined_anchor_s||m.range_s[0],s:m.similarity_score,k:"accepted"});});'
+            '(f.pending_matches||[]).forEach(function(m){if(m.range_s&&m.similarity_score!=null)'
+            'props.push({t:m.refined_anchor_s||m.range_s[0],s:m.similarity_score,k:"pending"});});});'
+            'return fetch(app+"/api/movie?project_id="+pid);})'
+            '.then(function(r){return r.json();})'
+            '.then(function(j){dur=j.waveform&&j.waveform.length?'
+            'j.waveform[j.waveform.length-1].time_s:0;'
+            'var evs=j.events||[];if(!dur&&evs.length)dur=evs[evs.length-1].range_s[1];'
+            'var B=120;dens=new Array(B).fill(0);'
+            'evs.forEach(function(e){var t=e.anchor_s||e.range_s[0];'
+            'var b=Math.min(B-1,Math.max(0,Math.floor(t/dur*B)));dens[b]++;});'
+            'ready();})'
+            '.catch(function(e){head.textContent="Matcher evidence unavailable";'
+            'head.style.color="#FF8790";'
+            'sub.textContent="Orpheus must be running ("+e.message+"). Not evidence that no proposals exist.";});'
+            '})();</script>'
+        )},
+    )
+    add(
+        "What is happening at this moment", "text", {"x": 14, "y": 14, "w": 10, "h": 8}, [],
+        description="The picture window around the playhead, with every sound-family decision that covers it. Green accepted, amber awaiting your review. Ticks mark where a replacement sound was placed. It follows the player above. A pending band is a ranked proposal, never an approval, and an empty stretch is unexamined rather than proven silent.",
+        options={"mode": "html", "content": (
+            '<div id="onow" style="height:100%;display:flex;flex-direction:column;gap:5px;'
+            'font:400 11px/1.35 system-ui;color:#8A9099">'
+            '<div id="onow-head" style="font:600 15px/1.2 system-ui;color:#E6E8EA">Loading\u2026</div>'
+            '<div id="onow-sub"></div>'
+            '<canvas id="onow-c" style="width:100%;flex:1;min-height:70px"></canvas>'
+            '<div id="onow-legend" style="display:flex;gap:12px;font-size:10px;align-items:center">'
+            '<span style="color:#9DCFAD">\u25a0 accepted</span>'
+            '<span style="color:#EAC17C">\u25a0 awaiting review</span>'
+            '<span style="color:#FF5A36">\u2502 placed contact</span>'
+            '<span style="color:#8A9099">\u2502 playhead</span>'
+            '<span id="onow-static" style="font-size:10px;color:#6E747C;margin-left:auto"></span></div>'
+            '</div>'
+            '<script>(function(){'
+            'var c=document.getElementById("onow-c"),head=document.getElementById("onow-head"),'
+            'sub=document.getElementById("onow-sub"),st=document.getElementById("onow-static");'
+            'if(!c)return;'
+            'if(window.__onowTimer)clearInterval(window.__onowTimer);'
+            f'var app="{app}";'
+            'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
+            'return m?decodeURIComponent(m[1]):fb;}'
+            'var pid=urlv("project","${project}");'
+            'var WIN=20,bands=[],ticks=[],dur=0,fam="";'
+            'function vid(){var v=document.querySelectorAll("video");return v.length?v[0]:null;}'
+            'function draw(){'
+            'var v=vid(),t=v?v.currentTime:0;'
+            'var r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;'
+            'c.width=r.width*d;c.height=r.height*d;'
+            'var x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,r.width,r.height);'
+            'var t0=Math.max(0,t-WIN/2),t1=t0+WIN,span=WIN;'
+            'x.fillStyle="#101215";x.fillRect(0,0,r.width,r.height);'
+            'var here=[];'
+            'for(var i=0;i<bands.length;i++){var b=bands[i];'
+            'if(b.e<t0||b.s>t1)continue;'
+            'if(t>=b.s&&t<=b.e)here.push(b);'
+            'var a=Math.max(0,(b.s-t0)/span)*r.width,w=Math.max(2,((Math.min(b.e,t1)-Math.max(b.s,t0))/span)*r.width);'
+            'x.fillStyle=b.k==="accepted"?"rgba(157,207,173,0.55)":"rgba(234,193,124,0.5)";'
+            'x.fillRect(a,r.height*0.18,w,r.height*0.64);}'
+            'x.strokeStyle="#FF5A36";x.lineWidth=2;'
+            'for(var j=0;j<ticks.length;j++){var tk=ticks[j];if(tk<t0||tk>t1)continue;'
+            'var px=(tk-t0)/span*r.width;x.beginPath();x.moveTo(px,r.height*0.10);x.lineTo(px,r.height*0.90);x.stroke();}'
+            'x.strokeStyle="#3A3F45";x.lineWidth=1;'
+            'x.beginPath();x.moveTo(0,r.height/2);x.lineTo(r.width,r.height/2);x.stroke();'
+            'var mid=r.width/2;x.strokeStyle="#E6E8EA";x.lineWidth=1.5;'
+            'x.beginPath();x.moveTo(mid,0);x.lineTo(mid,r.height);x.stroke();'
+            'x.fillStyle="#6E747C";x.font="10px system-ui";'
+            'x.fillText(t0.toFixed(1)+" s",2,r.height-2);'
+            'x.textAlign="right";x.fillText(t1.toFixed(1)+" s",r.width-2,r.height-2);x.textAlign="left";'
+            'var mm=Math.floor(t/60),ss=("0"+Math.floor(t%60)).slice(-2);'
+            'if(here.length){var acc=here.filter(function(b){return b.k==="accepted";}).length;'
+            'head.textContent=mm+":"+ss+" \u2014 "+(acc?"inside an accepted replacement":"inside a proposal awaiting your review");'
+            'head.style.color=acc?"#9DCFAD":"#EAC17C";'
+            'sub.textContent=fam+" \u00b7 "+here.length+" range"+(here.length>1?"s":"")+" cover this moment";}'
+            'else{head.textContent=mm+":"+ss+" \u2014 no decision covers this moment";'
+            'head.style.color="#8A9099";sub.textContent="Unexamined picture, not proven silent.";}'
+            '}'
+            'fetch(app+"/api/families?project_id="+pid).then(function(r){return r.json();})'
+            '.then(function(j){var fs=Array.isArray(j)?j:(j.families||[]);'
+            'fs.forEach(function(f){if(!fam)fam=f.name||f.id||"";'
+            '(f.accepted_ranges||[]).forEach(function(m){if(m.range_s)bands.push({s:m.range_s[0],e:m.range_s[1],k:"accepted"});'
+            'if(m.refined_anchor_s)ticks.push(m.refined_anchor_s);});'
+            '(f.pending_matches||[]).forEach(function(m){if(m.range_s)bands.push({s:m.range_s[0],e:m.range_s[1],k:"pending"});});});'
+            'var acc=bands.filter(function(b){return b.k==="accepted";}).length;'
+            'st.textContent=bands.length+" ranges known \u00b7 "+acc+" accepted \u00b7 "'
+            '+(bands.length-acc)+" awaiting review \u00b7 window \u00b1"+(WIN/2)+" s";'
+            'draw();window.__onowTimer=setInterval(draw,200);})'
+            '.catch(function(e){head.textContent="Decisions unavailable";head.style.color="#FF8790";'
+            'sub.textContent="Orpheus must be running ("+e.message+"). This is not evidence that no decisions exist.";});'
+            '})();</script>'
+        )},
+    )
+    add(
+        "What the film still hides", "table", {"x": 0, "y": 31, "w": 14, "h": 9},
+        [target(base + ' | event=~"movie_analysis|movie_noise|movie_review|family_movie_search"', datasource=loki)],
+        description="Findings and unreviewed regions across the whole picture. An empty table means nothing was detected, never that nothing is there.",
+        options=table_options,
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "start_s", "end_s", "family_id", "status", "decision"]}}},
+            {"id": "sortBy", "options": {"fields": [{"field": "start_s", "desc": False}]}},
+        ],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "links": [
+            {"title": "Inspect this moment in Orpheus", "url": f"{app}/workspace?project=${{project}}&view=part&time=${{__data.fields[\"start_s\"]}}"},
+        ]},
+        datasource=loki,
+    )
+
+
+    add(
+        "Who decided, and on what", "table", {"x": 14, "y": 31, "w": 10, "h": 9},
+        [target(base + ' | event=~"deterministic_baseline|candidate|selection|human_review|family_review|movie_review"', datasource=loki)],
+        description="Agent proposals and human verdicts in one chronology, provenance kept distinct. A measurement never becomes an approval.",
+        options=table_options,
+        transformations=[
+            {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+            {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "candidate_id", "family_id", "decision", "verdict", "status", "trace_id"]}}},
+            {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": True}]}},
+        ],
+        field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}},
+        datasource=loki,
+        overrides=[{
+            "matcher": {"id": "byName", "options": "trace_id"},
+            "properties": [{"id": "links", "value": [
+                {"title": "Open the agent trace", "url": "/explore?left=" + json.dumps(
+                    {"datasource": "orpheus-tempo", "queries": [{"query": "${__value.raw}", "queryType": "traceql"}], "range": {"from": "now-14d", "to": "now"}},
+                    separators=(",", ":"),
+                )},
+            ]}],
+        }],
+    )
+    health_children = []
+    for title, expr, field in (
+        ("Grafana MCP", 'clamp_max(orpheus_project_events_total' + project[:-1] + ',event="grafana_query"}, 1)',
+         {"mappings": [{"type": "value", "options": {"0": {"text": "NO EVIDENCE", "color": amber}, "1": {"text": "VERIFIED", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": amber, "value": None}, {"color": green, "value": 1}]}}),
+        ("Collector", 'up{job="orpheus"}',
+         {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": rose}, "1": {"text": "ONLINE", "color": green}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": rose, "value": None}, {"color": green, "value": 1}]}}),
+        ("Pending exports", "orpheus_export_pending",
+         {"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": safe_thresholds}),
+        ("Provider failures", "orpheus_project_provider_failures_total" + project,
+         {"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}, {"color": amber, "value": 1}, {"color": rose, "value": 3}]}}),
+    ):
+        health_children.append({
+            "id": next_id(),
+            "title": title,
+            "type": "stat",
+            "gridPos": {"x": len(health_children) * 6, "y": 41, "w": 6, "h": 4},
+            "description": "Decides whether the panels above can be trusted at all. Unresolved is not a pass.",
+            "datasource": {"type": "prometheus", "uid": prom},
+            "targets": [target(expr, instant=True)],
+            "options": stat_options,
+            "fieldConfig": {"defaults": field, "overrides": []},
+        })
+    panels.append({
+        "id": next_id(),
+        "title": "Runtime · can these panels be trusted",
+        "type": "row",
+        "collapsed": True,
+        "gridPos": {"x": 0, "y": 45, "w": 24, "h": 1},
+        "panels": health_children,
+    })
 
     raw_children = []
     for title, expr in (
@@ -505,21 +595,23 @@ def dashboard():
         ("Failures and rejected tools", base + ' | event=~".*failed|tool_result"'),
         ("Agent, MCP and trace evidence", base + ' | event=~"model_response|audio_response|grafana_query|grafana_investigation|tool_call|session_saved"'),
     ):
+        detail = "Raw lines for diagnosing why a decision above looks wrong. Read only after a panel disagrees with the export."
         raw_children.append({
-            "id": len(panels) + len(raw_children) + 2,
+            "id": next_id(),
             "title": title,
             "type": "logs",
-            "gridPos": {"x": 0, "y": 65 + len(raw_children) * 7, "w": 24, "h": 7},
+            "description": detail,
+            "gridPos": {"x": 0, "y": 46 + len(raw_children) * 7, "w": 24, "h": 7},
             "datasource": {"type": "loki", "uid": loki},
             "targets": [target(expr, datasource=loki)],
             "options": {"dedupStrategy": "none", "enableLogDetails": True, "prettifyLogMessage": False, "showCommonLabels": False, "showLabels": False, "showTime": True, "sortOrder": "Descending", "wrapLogMessage": True},
         })
     panels.append({
-        "id": len(panels) + 1,
+        "id": next_id(),
         "title": "Raw evidence · open for diagnosis",
         "type": "row",
         "collapsed": True,
-        "gridPos": {"x": 0, "y": 64, "w": 24, "h": 1},
+        "gridPos": {"x": 0, "y": 40, "w": 24, "h": 1},
         "panels": raw_children,
     })
     doc = {
@@ -528,9 +620,9 @@ def dashboard():
         "schemaVersion": 40,
         "version": 8,
         "refresh": "5s",
-        "time": {"from": "now-14d", "to": "now"},
+        "time": {"from": "now-7d", "to": "now"},
         "tags": ["orpheus", "agent", "foley", "local"],
-        "description": "One decision surface for deterministic baseline, agent fitting, Grafana evidence, provider execution and human approval.",
+        "description": "This is a film, these are the sounds replaced inside it, and this is the proof for each one. Measurements describe the export; only the creator approves it.",
         "editable": False,
         "graphTooltip": 1,
         "links": [],
@@ -543,14 +635,77 @@ def dashboard():
                     "type": "textbox",
                     "label": "Project",
                     "current": {"text": ".*", "value": ".*"},
-                }
+                },
+                {
+                    "name": "part_start",
+                    "type": "textbox",
+                    "label": "Part start (s)",
+                    "current": {"text": "150", "value": "150"},
+                },
+                {
+                    "name": "part_end",
+                    "type": "textbox",
+                    "label": "Part end (s)",
+                    "current": {"text": "210", "value": "210"},
+                },
+                {
+                    "name": "candidate",
+                    "type": "textbox",
+                    "label": "Candidate",
+                    "current": {"text": ".*", "value": ".*"},
+                },
             ]
         },
         "panels": panels,
     }
+    validate(doc)
     folder = OBSERVABILITY_ASSETS / "dashboards"
     folder.mkdir(exist_ok=True)
     (folder / "foley.json").write_text(json.dumps(doc, indent=2))
+
+
+def check_committed():
+    """Dashboard-as-code: the checked-in JSON must match what dashboard() generates."""
+    path = OBSERVABILITY_ASSETS / "dashboards" / "foley.json"
+    if not path.exists():
+        return {"status": "missing", "path": str(path)}
+    before = path.read_text()
+    dashboard()
+    after = path.read_text()
+    if before != after:
+        path.write_text(before)
+        return {"status": "drifted", "path": str(path), "hint": "Run dashboard() and commit the result."}
+    return {"status": "ok", "path": str(path), "panels": len(validate(json.loads(after)))}
+
+
+def validate(doc):
+    """Fail at generation time rather than shipping panels that point at nothing."""
+    if f"/d/{doc['uid']}/" not in obs.DASHBOARD_PATH + "/":
+        raise ValueError(f"Dashboard uid {doc['uid']} does not match {obs.DASHBOARD_PATH}")
+    seen = set()
+
+    def walk(panels):
+        for panel in panels:
+            ident = panel.get("id")
+            if ident is None:
+                raise ValueError(f"Panel without id: {panel.get('title')}")
+            if ident in seen:
+                raise ValueError(f"Duplicate panel id {ident}: {panel.get('title')}")
+            seen.add(ident)
+            if panel["type"] != "row" and not panel.get("description"):
+                raise ValueError(
+                    f"Panel {ident} '{panel.get('title')}' states no decision it changes"
+                )
+            for source in [panel.get("datasource")] + [
+                t.get("datasource") for t in panel.get("targets", [])
+            ]:
+                uid = (source or {}).get("uid")
+                if uid and uid != "-- Mixed --" and uid not in DATASOURCE_UIDS:
+                    raise ValueError(f"Unknown datasource uid {uid} in {panel.get('title')}")
+            walk(panel.get("panels", []))
+
+    walk(doc["panels"])
+    return seen
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
@@ -646,8 +801,10 @@ def backfill():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "action", choices=["setup", "collect", "backfill", "flush", "stop"]
+        "action",
+        choices=["setup", "collect", "backfill", "flush", "stop", "check", "report"],
     )
+    parser.add_argument("snapshot_id", nargs="?")
     args = parser.parse_args()
     if args.action == "setup":
         setup()
@@ -657,5 +814,13 @@ if __name__ == "__main__":
         backfill()
     elif args.action == "stop":
         compose("stop")
+    elif args.action == "check":
+        result = check_committed()
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["status"] == "ok" else 1)
+    elif args.action == "report":
+        if not args.snapshot_id:
+            raise SystemExit("report needs a snapshot id")
+        print(json.dumps(obs.static_report(args.snapshot_id), indent=2))
     else:
         print(obs.flush())

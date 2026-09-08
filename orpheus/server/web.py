@@ -248,7 +248,8 @@ class Handler(LocalHandler):
         elif route == "/api/projects":
             self.send_json(project_list())
         elif route == "/api/observability":
-            self.send_json(obs.status())
+            pid = parse_qs(parsed.query).get("project_id", [None])[0]
+            self.send_json(obs.status() | {"gates": obs.gates(pid)})
         elif route == "/api/takes":
             pid = parse_qs(parsed.query)["project_id"][0]
             projects.load(pid)
@@ -457,6 +458,9 @@ class Handler(LocalHandler):
             "/api/movie/review",
             "/api/movie/render",
             "/api/grafana",
+            "/api/grafana/part",
+            "/api/grafana/coverage",
+            "/api/grafana/snapshot",
         ):
             raise RequestError("Route not found.", 404)
         data = self.read_json(100000 if route == "/api/families/review" else 3000)
@@ -511,14 +515,65 @@ class Handler(LocalHandler):
             self.send_json(result, 201)
         elif route == "/api/grafana":
             projects.load(data["project_id"])
+            part = data.get("part")
             self.send_json(
                 asyncio.run(
                     obs.investigate(
                         data["project_id"],
                         data.get("topic", "history"),
                         data.get("candidate_id", ""),
+                        obs.part_context(
+                            data["project_id"],
+                            part.get("family_id"),
+                            part.get("part_start_s"),
+                            part.get("part_end_s"),
+                        )
+                        if part
+                        else None,
                     )
                 )
+            )
+        elif route == "/api/grafana/part":
+            projects.load(data["project_id"])
+            part = data["part"]
+            self.send_json(
+                obs.part_lens(
+                    data["project_id"],
+                    obs.part_context(
+                        data["project_id"],
+                        part.get("family_id"),
+                        part.get("part_start_s"),
+                        part.get("part_end_s"),
+                    ),
+                    data.get("candidate_id", ""),
+                )
+            )
+        elif route == "/api/grafana/coverage":
+            projects.load(data["project_id"])
+            self.send_json(
+                obs.coverage_timeline(
+                    data["project_id"],
+                    page=int(data.get("page", 0)),
+                    span_s=float(data.get("span_s", 60)),
+                )
+            )
+        elif route == "/api/grafana/snapshot":
+            projects.load(data["project_id"])
+            part = data.get("part")
+            self.send_json(
+                obs.snapshot(
+                    data["project_id"],
+                    obs.part_context(
+                        data["project_id"],
+                        part.get("family_id"),
+                        part.get("part_start_s"),
+                        part.get("part_end_s"),
+                    )
+                    if part
+                    else None,
+                    data.get("label", ""),
+                ),
+                201,
             )
         elif route == "/api/families":
             with mutation():

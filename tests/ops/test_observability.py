@@ -2,15 +2,19 @@ from tests.support import load_case
 
 "Offline boundary checks; ORPHEUS_LIVE_MCP=1 additionally tests real local MCP in ADK."
 import asyncio
+import copy
 import hashlib
 import json
 import os
+import re
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import numpy as np
 
 from orpheus.domain import families, family_agent, projects, takes
 from orpheus.ops import observability as o
@@ -39,7 +43,7 @@ class EvidenceChecks(unittest.TestCase):
             folder = Path(tmp)
             path = folder / "local.json"
             path.write_text(json.dumps({"dashboard_url": "http://127.0.0.1:13000/d/orpheus/foley-evidence"}))
-            with patch.object(o, "CONFIG", path), patch.dict(os.environ, {}, clear=False):
+            with patch.object(o, "CONFIG", path), patch.dict(os.environ, {"ORPHEUS_GRAFANA_ENABLED": "1"}):
                 value = o.config()
             self.assertTrue(value["dashboard_url"].endswith("/d/orpheus/agentic-foley-control-room"))
 
@@ -269,3 +273,304 @@ class EvidenceChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DashboardContract(unittest.TestCase):
+    def test_generated_dashboard_references_only_provisioned_targets(self):
+        from orpheus.config import OBSERVABILITY_ASSETS
+        from orpheus.ops import grafana
+
+        doc = json.loads((OBSERVABILITY_ASSETS / "dashboards" / "foley.json").read_text())
+        self.assertTrue(grafana.validate(doc))
+        for mutate in (
+            lambda d: d.__setitem__("uid", "drifted"),
+            lambda d: d["panels"][1].__setitem__("id", d["panels"][0]["id"]),
+            lambda d: d["panels"][0].pop("id"),
+            lambda d: next(
+                p for p in d["panels"] if p.get("targets")
+            )["targets"][0]["datasource"].__setitem__("uid", "absent"),
+        ):
+            broken = copy.deepcopy(doc)
+            mutate(broken)
+            with self.assertRaises(ValueError):
+                grafana.validate(broken)
+
+    def test_datasource_uids_match_provisioning(self):
+        import re
+
+        from orpheus.config import OBSERVABILITY_ASSETS
+        from orpheus.ops import grafana
+
+        text = (OBSERVABILITY_ASSETS / "provisioning" / "datasources" / "local.yaml").read_text()
+        self.assertEqual(set(re.findall(r"^\s*uid:\s*(\S+)", text, re.M)), grafana.DATASOURCE_UIDS)
+
+    def test_committed_dashboard_matches_generator(self):
+        from orpheus.ops import grafana
+
+        self.assertEqual(grafana.check_committed()["status"], "ok")
+
+    def test_alert_and_recording_rules_are_wellformed(self):
+        import yaml
+
+        from orpheus.config import OBSERVABILITY_ASSETS
+
+        groups = yaml.safe_load((OBSERVABILITY_ASSETS / "rules.yaml").read_text())["groups"]
+        self.assertIn("orpheus-evidence", {g["name"] for g in groups})
+        recorded = {r["record"] for g in groups for r in g["rules"] if r.get("record")}
+        for group in groups:
+            for rule in group["rules"]:
+                self.assertTrue(rule.get("alert") or rule.get("record"))
+                self.assertTrue(rule["expr"].strip())
+                for ref in re.findall(r"orpheus:[a-z_:0-9]+", rule["expr"]):
+                    self.assertIn(ref, recorded)
+
+
+class PartLens(unittest.TestCase):
+    def store(self, tmp):
+        return (
+            patch.object(o, "STORE", Path(tmp)),
+            patch.object(o, "DB", Path(tmp) / "db"),
+            patch.object(o, "config", return_value={"enabled": True}),
+        )
+
+    def test_lens_scopes_to_the_selected_part_and_names_decision_owners(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                near = o.part_context(pid, family_id="abcdef123456", part_start_s=10, part_end_s=20)
+                far = o.part_context(pid, family_id="abcdef123456", part_start_s=900, part_end_s=910)
+                o.emit(pid, "candidate", {"id": "0123456789ab", **near}, timestamp=1000)
+                o.emit(pid, "human_review", {"verdict": "approved", **near}, timestamp=1001)
+                o.emit(pid, "candidate", {"id": "0123456789ab", **far}, timestamp=1002)
+                lens = o.part_lens(pid, near)
+                self.assertEqual(lens["row_count"], 2)
+                self.assertEqual(lens["evidence_contract"], o.EVIDENCE_CONTRACT_SCHEMA)
+                self.assertEqual(
+                    [d["owner"] for d in lens["decisions"]], ["agent", "human"]
+                )
+                self.assertEqual(lens["decisions"][-1]["decision"], "approved")
+
+    def test_selector_is_bounded_and_rejects_bad_scope(self):
+        pid = "1234567890abcdef"
+        part = {"part_start_s": 5, "part_end_s": 9, "family_id": "abcdef123456"}
+        overlap = o.part_selector(pid, part, "0123456789ab")
+        self.assertIn('project_id="' + pid + '"', overlap)
+        self.assertIn('candidate_id="0123456789ab"', overlap)
+        self.assertIn("part_end_s >= 5", overlap)
+        self.assertIn("part_start_s <= 9", overlap)
+        with self.assertRaises(ValueError):
+            o.part_selector("nope", part)
+        with self.assertRaises(ValueError):
+            o.part_selector(pid, part, "bad-candidate")
+        with self.assertRaises(ValueError):
+            o.part_selector(pid, {"part_start_s": None, "part_end_s": 9})
+        injected = o.part_selector(pid, {**part, "family_id": 'x"} | evil | {a="b'})
+        self.assertNotIn("evil", injected)
+        self.assertIn('family_id="unknown"', injected)
+
+    def test_unresolved_states_never_read_as_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                self.assertIn("no_evidence_rows", o.unresolved([]))
+                self.assertIn("no_decision_owner", o.unresolved([]))
+                rows = [{"event": "tool_result", "tool_error": True}]
+                self.assertIn("failures_present", o.unresolved(rows))
+
+    def test_gates_report_unresolved_when_grafana_is_absent(self):
+        with patch.object(o, "config", return_value=None):
+            result = o.gates()
+            self.assertEqual(set(result["checks"].values()), {"unresolved"})
+            self.assertEqual(
+                result["blocking"], sorted(["runtime", "mcp", "export"])
+            )
+
+    def test_envelope_levels_keep_transients_and_skip_short_audio(self):
+        db = np.linspace(-60, -10, 100 * 185)
+        levels = o.envelope_levels(db)
+        self.assertEqual([len(levels[k]) for k in ("1s", "10s", "60s")], [185, 18, 3])
+        coarse = levels["60s"][0]
+        self.assertLess(coarse["min_dbfs"], coarse["max_dbfs"])
+        self.assertEqual(o.envelope_levels(np.linspace(-60, -10, 50)), {})
+
+    def test_coverage_pages_and_marks_span_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                for index in range(3):
+                    o.emit(
+                        pid,
+                        "candidate",
+                        {"id": "0123456789ab", "part_start_s": index * 60, "part_end_s": index * 60 + 5},
+                        timestamp=1000 + index,
+                    )
+                page = o.coverage_timeline(pid, page=0, page_size=2, span_s=60)
+                self.assertEqual(page["total_chunks"], 3)
+                self.assertTrue(page["has_more"])
+                self.assertEqual(len(page["chunks"]), 2)
+                self.assertEqual({c["state"] for c in page["chunks"]}, {"covered"})
+                self.assertFalse(o.coverage_timeline(pid, page=1, page_size=2, span_s=60)["has_more"])
+
+    def test_snapshot_is_immutable_and_report_reads_it_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                part = o.part_context(pid, part_start_s=10, part_end_s=20)
+                o.emit(pid, "human_review", {"verdict": "approved", **part}, timestamp=1000)
+                first = o.snapshot(pid, part, label="review-1")
+                again = o.snapshot(pid, part, label="review-1")
+                self.assertEqual(first["snapshot_id"], again["snapshot_id"])
+                path = Path(first["path"])
+                self.assertEqual(path.stat().st_mode & 0o222, 0)
+                back = o.static_report(first["snapshot_id"])
+                self.assertEqual(back["status"], "ok")
+                self.assertEqual(back["decisions"][0]["owner"], "human")
+                self.assertEqual(o.static_report("a" * 20)["status"], "missing")
+                with self.assertRaises(ValueError):
+                    o.static_report("short")
+
+    def test_part_routes_are_reachable_and_reject_bad_input(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        from orpheus.domain import projects
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = root / "local.json"
+            cfg.write_text(json.dumps({
+                "dashboard_url": "http://127.0.0.1:13000" + o.DASHBOARD_PATH,
+                "mcp_url": "http://127.0.0.1:1/mcp",
+                "mcp_token": "t",
+            }))
+            pid = "1234567890abcdef"
+            with (
+                patch.object(projects, "ROOT", root),
+                patch.object(projects, "PROJECTS", root / "projects"),
+                patch.object(projects, "load", lambda ident: {"id": ident}),
+                patch.object(o, "STORE", root),
+                patch.object(o, "DB", root / "db"),
+                patch.object(o, "CONFIG", cfg),
+                patch.dict(os.environ, {"ORPHEUS_GRAFANA_ENABLED": "1"}),
+            ):
+                from orpheus.server import web
+
+                part = o.part_context(pid, part_start_s=10, part_end_s=20)
+                o.emit(pid, "human_review", {"verdict": "approved", **part}, timestamp=1000)
+                server = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+                threading.Thread(target=server.serve_forever, daemon=True).start()
+                base = f"http://127.0.0.1:{server.server_port}"
+                client = httpx.Client(base_url=base, headers={"Origin": base}, trust_env=False, timeout=30)
+                try:
+                    body = {"project_id": pid, "part": {"part_start_s": 10, "part_end_s": 20}}
+                    lens = client.post("/api/grafana/part", json=body)
+                    self.assertEqual(lens.status_code, 200, lens.text)
+                    self.assertEqual([d["owner"] for d in lens.json()["decisions"]], ["human"])
+                    self.assertEqual(client.post("/api/grafana/coverage", json={"project_id": pid}).status_code, 200)
+                    self.assertEqual(client.post("/api/grafana/snapshot", json=body).status_code, 201)
+                    inverted = {"project_id": pid, "part": {"part_start_s": 20, "part_end_s": 10}}
+                    self.assertEqual(client.post("/api/grafana/part", json=inverted).status_code, 400)
+                finally:
+                    client.close()
+                    server.shutdown()
+                    server.server_close()
+
+    def test_render_receipt_and_review_land_in_the_same_part(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                accepted = [{"range_s": [12.0, 13.5]}, {"range_s": [40.0, 41.0]}]
+                covered = [bound for item in accepted for bound in item["range_s"]]
+                receipt = {"id": "0123456789ab", "family_id": "abcdef123456"}
+                receipt.update(o.part_context(pid, "abcdef123456", min(covered), max(covered)))
+                self.assertEqual((receipt["part_start_s"], receipt["part_end_s"]), (12.0, 41.0))
+                o.emit(pid, "candidate", {**receipt, "measurements": {"accepted_events": 2}}, timestamp=1000)
+                o.emit(pid, "human_review", {
+                    "candidate_id": receipt["id"], "verdict": "approved",
+                    **{k: receipt[k] for k in ("part_start_s", "part_end_s", "family_id")},
+                }, timestamp=1001)
+                lens = o.part_lens(pid, o.part_context(pid, "abcdef123456", 12.0, 41.0))
+                self.assertEqual(lens["row_count"], 2)
+                self.assertEqual(
+                    [(d["owner"], d["event"]) for d in lens["decisions"]],
+                    [("agent", "candidate"), ("human", "human_review")],
+                )
+                self.assertEqual(lens["decisions"][-1]["decision"], "approved")
+
+    def test_live_progress_reports_running_then_goes_idle_when_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                o.emit(pid, "movie_progress", {
+                    "status": "analyzing", "name": "signal_scan",
+                    "measurements": {"progress": 40, "scanned_s": 720, "duration_s": 1800},
+                }, timestamp=time.time())
+                text = o.metrics_text()
+                self.assertIn('phase="signal_scan"', text)
+                self.assertRegex(text, r"orpheus_live_running\{[^}]*\} 1")
+                self.assertRegex(text, r"orpheus_live_progress\{[^}]*\} 40")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                o.emit(pid, "movie_progress", {
+                    "status": "analyzing", "name": "signal_scan",
+                    "measurements": {"progress": 55},
+                }, timestamp=time.time() - o.LIVE_STALE_S - 60)
+                self.assertRegex(o.metrics_text(), r"orpheus_live_running\{[^}]*\} 0")
+
+    def test_finished_work_is_not_reported_as_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, c = self.store(tmp)
+            with a, b, c:
+                pid = "1234567890abcdef"
+                o.emit(pid, "render_progress", {
+                    "name": "complete", "status": "running",
+                    "measurements": {"progress": 100},
+                }, timestamp=time.time())
+                self.assertRegex(o.metrics_text(), r"orpheus_live_running\{[^}]*\} 0")
+
+    def test_dashboard_may_read_waveforms_but_not_mutate(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        from orpheus.config import GRAFANA_PORTS
+        from orpheus.domain import projects
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(projects, "ROOT", root),
+                patch.object(projects, "PROJECTS", root / "projects"),
+            ):
+                from orpheus.server import web
+
+                server = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+                threading.Thread(target=server.serve_forever, daemon=True).start()
+                base = f"http://127.0.0.1:{server.server_port}"
+                dash = f"http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}"
+                client = httpx.Client(base_url=base, trust_env=False, timeout=20)
+                try:
+                    allowed = client.get("/api/projects", headers={"Origin": dash})
+                    self.assertEqual(
+                        allowed.headers.get("access-control-allow-origin"), dash
+                    )
+                    stranger = client.get(
+                        "/api/projects", headers={"Origin": "http://evil.example"}
+                    )
+                    self.assertIsNone(stranger.headers.get("access-control-allow-origin"))
+                    blocked = client.post(
+                        "/api/grafana", json={}, headers={"Origin": dash}
+                    )
+                    self.assertEqual(blocked.status_code, 403)
+                finally:
+                    client.close()
+                    server.shutdown()
+                    server.server_close()
+

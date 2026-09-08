@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
   mcp:
     image: grafana/mcp-grafana@sha256:5114852743e450fe5186b6c1712419843eb4bd295e47e64c452c3aa0fab3c42e
-    command: ["-t", "streamable-http", "-address", ":8000", "--allowed-hosts", "127.0.0.1:${ORPHEUS_MCP_PORT},localhost:${ORPHEUS_MCP_PORT}", "--disable-write", "--enabled-tools", "datasource,prometheus,loki,tempo,dashboard,navigation,alerting"]
+    command: ["-t", "streamable-http", "-address", ":8000", "--allowed-hosts", "127.0.0.1:${ORPHEUS_MCP_PORT},localhost:${ORPHEUS_MCP_PORT}", "--disable-write", "--enabled-tools", "datasource,prometheus,loki,tempo,dashboard,navigation,alerting,runpanelquery"]
     environment:
       GRAFANA_URL: http://grafana:3000
       GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:-not-provisioned}

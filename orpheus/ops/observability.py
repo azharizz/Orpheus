@@ -18,12 +18,149 @@ from ..config import OBSERVABILITY_DIR as STORE
 
 CONFIG = STORE / "local.json"
 DB = STORE / "outbox.sqlite"
+DASHBOARD_PATH = "/d/orpheus/agentic-foley-control-room"
+EVIDENCE_CONTRACT_SCHEMA = "orpheus.part-evidence/1"
+MAX_LENS_ROWS = 500
+ENVELOPE_RESOLUTIONS = (1, 10, 60)
+COVERAGE_PAGE = 100
+LIVE_STALE_S = 120
 
 
 def config():
     if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0" or not CONFIG.exists():
         return None
-    return json.loads(CONFIG.read_text())
+    value = json.loads(CONFIG.read_text())
+    url = value.get("dashboard_url")
+    if url and not url.endswith(DASHBOARD_PATH):
+        value["dashboard_url"] = url.split("/d/")[0] + DASHBOARD_PATH
+    return value
+
+
+def part_context(project_id, family_id=None, part_start_s=None, part_end_s=None):
+    """The one selected picture Part the agent and reviewer both argue about."""
+    if not re.fullmatch("[a-f0-9]{16}", project_id):
+        raise ValueError("Invalid telemetry project")
+    if not finite(part_start_s) or not finite(part_end_s) or part_end_s <= part_start_s:
+        raise ValueError("Part must span a positive picture range")
+    context = {"part_start_s": part_start_s, "part_end_s": part_end_s}
+    if family_id is not None:
+        context["family_id"] = token(family_id)
+    return context
+
+
+def part_selector(project_id, part=None, candidate_id="", events=None):
+    """Bounded LogQL for one Part. Time filtering stays label-side; ranges are numeric."""
+    if not re.fullmatch("[a-f0-9]{16}", project_id):
+        raise ValueError("Invalid project")
+    if candidate_id and not re.fullmatch("[a-f0-9]{12}", candidate_id):
+        raise ValueError("Invalid candidate")
+    stream = '{service_name="orpheus"'
+    if events:
+        stream += ',event=~"' + "|".join(token(e) for e in events) + '"'
+    selector = stream + '} | json | project_id="' + project_id + '"'
+    if candidate_id:
+        selector += ' | candidate_id="' + candidate_id + '"'
+    if part:
+        start, end = part["part_start_s"], part["part_end_s"]
+        if not finite(start) or not finite(end):
+            raise ValueError("Part must span a numeric picture range")
+        if part.get("family_id"):
+            selector += ' | family_id="' + token(part["family_id"]) + '"'
+        selector += f" | part_end_s >= {start} | part_start_s <= {end}"
+    return selector
+
+
+def part_lens(project_id, part, candidate_id="", limit=MAX_LENS_ROWS):
+    """One selected Part, one shared read: what the agent claims and what was measured."""
+    rows = read_events(project_id, newest_first=True)
+    start, end = part["part_start_s"], part["part_end_s"]
+    family = part.get("family_id")
+    inside = []
+    for row in rows:
+        if candidate_id and row.get("candidate_id") != candidate_id:
+            continue
+        if family and row.get("family_id") not in (None, family):
+            continue
+        low = row.get("part_start_s", row.get("output_start_s", row.get("start_s")))
+        high = row.get("part_end_s", row.get("output_end_s", row.get("end_s", low)))
+        if not finite(low):
+            continue
+        if not finite(high):
+            high = low
+        if high >= start and low <= end:
+            inside.append(row)
+    inside.sort(key=lambda r: r.get("observed_at", 0), reverse=True)
+    decisions = [r for r in inside if r["event"] in DECISION_EVENTS]
+    measured = [r for r in inside if r["event"] in ("sound_event", "candidate_timing_measured")]
+    errors = [r["timing_error_ms"] for r in measured if finite(r.get("timing_error_ms"))]
+    return {
+        "evidence_contract": EVIDENCE_CONTRACT_SCHEMA,
+        "project_id": project_id,
+        "part": {"part_start_s": start, "part_end_s": end, "family_id": family},
+        "candidate_id": candidate_id,
+        "selector": part_selector(project_id, part, candidate_id),
+        "rows": inside[:limit],
+        "row_count": len(inside),
+        "truncated": len(inside) > limit,
+        "decisions": ledger(decisions),
+        "measured_events": len(measured),
+        "max_abs_timing_error_ms": max((abs(v) for v in errors), default=None),
+        "unresolved": unresolved(inside),
+        "warning": "Measured rows describe the export. Absence of rows is not evidence of correctness.",
+    }
+
+
+DECISION_EVENTS = (
+    "deterministic_baseline",
+    "candidate",
+    "selection",
+    "human_review",
+    "movie_candidate",
+    "session_saved",
+    "failed",
+)
+
+
+def ledger(rows):
+    """Who decided what, on which evidence. Model and human provenance stay distinct."""
+    entries = []
+    for row in sorted(rows, key=lambda r: r.get("observed_at", 0)):
+        entries.append(
+            {
+                "event": row["event"],
+                "observed_at": row.get("observed_at"),
+                "owner": "human" if row["event"] == "human_review" else "agent",
+                "decision": row.get("verdict") or row.get("decision") or row.get("status"),
+                "candidate_id": row.get("candidate_id"),
+                "evidence_id": row.get("evidence_id"),
+                "receipt_id": row.get("receipt_id"),
+                "trace_id": row.get("trace_id"),
+            }
+        )
+    return entries
+
+
+def unresolved(rows):
+    """Explicit unknowns beat a confident blank panel."""
+    states = []
+    if not rows:
+        states.append("no_evidence_rows")
+    if pending():
+        states.append("pending_exports")
+    if not any(r["event"] in DECISION_EVENTS for r in rows):
+        states.append("no_decision_owner")
+    if any(r.get("tool_error") or r["event"].endswith("failed") for r in rows):
+        states.append("failures_present")
+    return states
+
+
+def read_events(project_id=None, newest_first=False):
+    with connect() as db:
+        rows = [json.loads(r[0]) for r in db.execute("SELECT payload FROM events")]
+    if project_id:
+        rows = [r for r in rows if r.get("project_id") == project_id]
+    rows.sort(key=lambda r: r.get("observed_at", 0), reverse=newest_first)
+    return rows
 
 
 @contextmanager
@@ -67,6 +204,63 @@ def token(value):
     )
 
 
+def envelope_levels(db, resolutions=ENVELOPE_RESOLUTIONS):
+    """Long films need coarse overviews that still show transients, so keep min and max."""
+    levels = {}
+    for seconds in resolutions:
+        bins = max(1, int(seconds * 100))
+        if len(db) < bins:
+            continue
+        usable = len(db) - len(db) % bins
+        block = db[:usable].reshape(-1, bins)
+        levels[f"{seconds}s"] = [
+            {
+                "media_s": round(index * seconds, 3),
+                "rms_dbfs": round(float(row.mean()), 2),
+                "min_dbfs": round(float(row.min()), 2),
+                "max_dbfs": round(float(row.max()), 2),
+            }
+            for index, row in enumerate(block)
+        ]
+    return levels
+
+
+def chunk_index(rows, span_s=60):
+    """Coarse map of where evidence lives, so a long film is seekable without a full scan."""
+    chunks = {}
+    for row in rows:
+        start = row.get("part_start_s", row.get("output_start_s", row.get("start_s")))
+        if not finite(start):
+            continue
+        key = int(start // span_s) * span_s
+        chunk = chunks.setdefault(
+            key, {"chunk_start_s": key, "chunk_end_s": key + span_s, "rows": 0, "events": {}}
+        )
+        chunk["rows"] += 1
+        chunk["events"][row["event"]] = chunk["events"].get(row["event"], 0) + 1
+    return [chunks[key] for key in sorted(chunks)]
+
+
+def coverage_timeline(project_id, page=0, page_size=COVERAGE_PAGE, span_s=60):
+    """Paginated coverage: which spans of picture have evidence and which are unexamined."""
+    rows = read_events(project_id)
+    chunks = chunk_index(rows, span_s)
+    total = len(chunks)
+    window = chunks[page * page_size : (page + 1) * page_size]
+    for chunk in window:
+        chunk["state"] = "covered" if chunk["rows"] else "unexamined"
+    return {
+        "project_id": project_id,
+        "page": page,
+        "page_size": page_size,
+        "span_s": span_s,
+        "total_chunks": total,
+        "has_more": (page + 1) * page_size < total,
+        "chunks": window,
+        "warning": "Unexamined spans are unknown, not silent or correct.",
+    }
+
+
 def sound_profile(path):
     """Signal descriptors, not silence/noise/material/quality ground truth."""
     from ..domain import media
@@ -102,6 +296,7 @@ def sound_profile(path):
             {"media_s": round(i / 100, 3), "rms_dbfs": round(float(db[i]), 2)}
             for i in range(0, len(db), max(1, math.ceil(len(db) / 120)))
         ],
+        "envelope_levels": envelope_levels(db),
         "provenance": "signal_measurement",
         "warning": "Floor percentile includes intentional quiet; activity threshold is not semantic coverage. Mono PCM analysis, not acoustic calibration.",
     }
@@ -122,6 +317,7 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         "event": token(event),
         "observed_at": timestamp,
         "trace_id": hashlib.sha256((project_id + turn_id).encode()).hexdigest()[:32],
+        "evidence_contract": EVIDENCE_CONTRACT_SCHEMA,
     }
     for key in (
         "candidate_id",
@@ -161,6 +357,8 @@ def enqueue(project_id, event, fields=None, turn_id="local", timestamp=None):
         "source_landmark_s",
         "gain_db",
         "clock_uncertainty_ms",
+        "part_start_s",
+        "part_end_s",
     ):
         if finite(fields.get(key)):
             payload[key] = fields[key]
@@ -422,8 +620,7 @@ def pending():
 
 def metrics_text():
     # ponytail: scan the local experiment archive; pre-aggregate if scrape latency approaches 5s.
-    with connect() as db:
-        rows = [json.loads(r[0]) for r in db.execute("SELECT payload FROM events")]
+    rows = read_events()
     counts = {}
     failures = {}
     tokens = 0
@@ -481,6 +678,11 @@ def metrics_text():
             project["review"] = r
         if r["event"] == "movie_analysis":
             project["movie_analysis"] = r
+        if r["event"] in ("movie_progress", "render_progress"):
+            if r.get("observed_at", 0) >= project.get("live", {}).get("observed_at", 0):
+                project["live"] = r
+        if r["event"] == "family_range" and r.get("mapping_id"):
+            project.setdefault("ranges", {})[r["mapping_id"]] = r
         if r["event"] == "movie_candidate":
             project["movie_candidate"] = r
     lines = ["# TYPE orpheus_events_total counter"]
@@ -505,6 +707,11 @@ def metrics_text():
     ):
         if finite(latest.get(key)):
             lines.append(f"orpheus_latest_candidate_{key} {latest[key]}")
+    if latest.get("trace_id"):
+        lines.append(
+            f'orpheus_latest_candidate_trace{{trace_id="{latest["trace_id"]}",'
+            f'candidate_id="{token(str(latest.get("candidate_id", "unknown")))}"}} 1'
+        )
     selection_states = {"unsuitable": -1, "needs_human_review": 1}
     review_states = {"rejected": -1, "reject": -1, "approved": 1, "approve": 1}
     measured = (
@@ -533,6 +740,26 @@ def metrics_text():
             value = analysis.get(key)
             if finite(value):
                 lines.append(f"orpheus_movie_{key}{{{labels}}} {value}")
+        buckets = {}
+        for row in project.get("ranges", {}).values():
+            key = token(str(row.get("status", "unknown")))
+            buckets[key] = buckets.get(key, 0) + 1
+        for key, count in buckets.items():
+            lines.append(f'orpheus_family_ranges{{{labels},status="{key}"}} {count}')
+        live = project.get("live", {})
+        if live:
+            age = time.time() - live.get("observed_at", 0)
+            running = int(live.get("progress") != 100 and age < LIVE_STALE_S)
+            phase = token(str(live.get("name", "unknown")))
+            lines += [
+                f'orpheus_live_running{{{labels},kind="{token(str(live["event"]))}",'
+                f'phase="{phase}"}} {running}',
+                f"orpheus_live_progress{{{labels}}} {live.get('progress', 0)}",
+                f"orpheus_live_age_seconds{{{labels}}} {round(age, 1)}",
+            ]
+            for key in ("scanned_s", "duration_s", "buckets", "events", "noise_regions"):
+                if finite(live.get(key)):
+                    lines.append(f"orpheus_live_{key}{{{labels}}} {live[key]}")
         if finite(project.get("run_started_at")) and finite(project.get("run_finished_at")):
             lines.append(
                 f"orpheus_project_run_duration_seconds{{{labels}}} "
@@ -561,7 +788,7 @@ def metrics_text():
     return "\n".join(lines) + "\n"
 
 
-async def investigate(project_id, topic="history", candidate_id=""):
+async def investigate(project_id, topic="history", candidate_id="", part=None):
     """All evidence reads go through the official Grafana MCP server, not direct Loki APIs."""
     cfg = config()
     if not cfg:
@@ -571,10 +798,12 @@ async def investigate(project_id, topic="history", candidate_id=""):
         }
     if not re.fullmatch("[a-f0-9]{16}", project_id):
         raise ValueError("Invalid project")
-    if topic not in ("history", "failures", "sound", "takes", "runtime"):
+    if topic not in ("history", "failures", "sound", "takes", "runtime", "part"):
         raise ValueError("Unknown investigation topic")
     if candidate_id and not re.fullmatch("[a-f0-9]{12}", candidate_id):
         raise ValueError("Invalid candidate")
+    if topic == "part" and not part:
+        raise ValueError("Part topic requires a selected Part")
     await asyncio.to_thread(flush)
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
@@ -596,7 +825,14 @@ async def investigate(project_id, topic="history", candidate_id=""):
         selector += (
             ' | event=~"candidate|candidate_timing_measured|sound_event|sound_profile"'
         )
-    if candidate_id:
+    elif topic == "part":
+        selector = part_selector(
+            project_id,
+            part,
+            candidate_id,
+            events=DECISION_EVENTS + ("sound_event", "candidate_timing_measured"),
+        )
+    if candidate_id and topic != "part":
         selector += ' | candidate_id="' + candidate_id + '"'
     started = time.time()
     try:
@@ -628,9 +864,9 @@ async def investigate(project_id, topic="history", candidate_id=""):
                         else {
                             "datasourceUid": "orpheus-loki",
                             "logql": selector,
-                            "limit": 100,
+                            "limit": MAX_LENS_ROWS if topic == "part" else 100,
                             "format": "compact",
-                            "startRfc3339": "now-14d",
+                            "startRfc3339": "now-24h" if topic == "part" else "now-14d",
                             "endRfc3339": "now",
                         }
                     )
@@ -670,6 +906,13 @@ async def investigate(project_id, topic="history", candidate_id=""):
                         "pending_exports": pending(),
                         "warning": "Grafana measurements and model/human provenance are distinct. Empty results or pending exports are not success. Telemetry cannot establish perceptual truth.",
                     }
+                    if topic == "part":
+                        lens = part_lens(project_id, part, candidate_id)
+                        report["part"] = lens["part"]
+                        report["decisions"] = lens["decisions"]
+                        report["max_abs_timing_error_ms"] = lens["max_abs_timing_error_ms"]
+                        report["unresolved"] = lens["unresolved"]
+                        report["gates"] = gates(project_id)["checks"]
                     report["receipt_id"] = hashlib.sha256(
                         json.dumps(report, sort_keys=True).encode()
                     ).hexdigest()[:20]
@@ -703,4 +946,89 @@ def status():
         "dashboard_url": cfg.get("dashboard_url") if cfg else None,
         "pending_exports": pending() if cfg else None,
         "mcp_url": cfg.get("mcp_url") if cfg else None,
+    }
+
+
+def gates(project_id=None):
+    """Every gate reports pass/fail/unresolved. Unknown never reads as pass."""
+    cfg = config()
+    checks = {}
+    if not cfg:
+        checks["runtime"] = "unresolved"
+        checks["mcp"] = "unresolved"
+        checks["export"] = "unresolved"
+    else:
+        backlog = pending()
+        checks["export"] = "pass" if backlog == 0 else "fail"
+        checks["mcp"] = "pass" if cfg.get("mcp_url") and cfg.get("mcp_token") else "unresolved"
+        checks["runtime"] = "pass" if CONFIG.exists() else "unresolved"
+    if project_id:
+        rows = read_events(project_id)
+        checks["decision_owner"] = (
+            "pass" if any(r["event"] in DECISION_EVENTS for r in rows) else "unresolved"
+        )
+        checks["failures"] = (
+            "fail"
+            if any(r.get("tool_error") or r["event"].endswith("failed") for r in rows)
+            else "pass"
+        )
+    return {
+        "evidence_contract": EVIDENCE_CONTRACT_SCHEMA,
+        "checks": checks,
+        "blocking": sorted(k for k, v in checks.items() if v != "pass"),
+        "warning": "An unresolved gate is not a pass. Do not treat missing evidence as approval.",
+    }
+
+
+def snapshot(project_id, part=None, label=""):
+    """Immutable evidence bundle: content-addressed so a report cannot drift from its rows."""
+    if not re.fullmatch("[a-f0-9]{16}", project_id):
+        raise ValueError("Invalid project")
+    rows = read_events(project_id)
+    body = {
+        "evidence_contract": EVIDENCE_CONTRACT_SCHEMA,
+        "project_id": project_id,
+        "label": token(label) if label else "",
+        "part": part,
+        "lens": {k: v for k, v in part_lens(project_id, part).items() if k != "rows"}
+        if part
+        else None,
+        "gates": gates(project_id),
+        "coverage": coverage_timeline(project_id),
+        "decisions": ledger([r for r in rows if r["event"] in DECISION_EVENTS]),
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    raw = json.dumps(body, sort_keys=True, allow_nan=False)
+    body["snapshot_id"] = hashlib.sha256(raw.encode()).hexdigest()[:20]
+    body["captured_at"] = time.time()
+    folder = STORE / "snapshots"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / (body["snapshot_id"] + ".json")
+    if not path.exists():
+        path.write_text(json.dumps(body, sort_keys=True))
+        path.chmod(0o444)
+    return {k: v for k, v in body.items() if k != "rows"} | {"path": str(path)}
+
+
+def static_report(snapshot_id):
+    """Static export: reads back an immutable snapshot, never a live query."""
+    if not re.fullmatch("[a-f0-9]{20}", snapshot_id):
+        raise ValueError("Invalid snapshot")
+    path = STORE / "snapshots" / (snapshot_id + ".json")
+    if not path.exists():
+        return {"status": "missing", "snapshot_id": snapshot_id}
+    body = json.loads(path.read_text())
+    lens = body.get("lens") or {}
+    return {
+        "status": "ok",
+        "snapshot_id": snapshot_id,
+        "captured_at": body.get("captured_at"),
+        "project_id": body["project_id"],
+        "part": body.get("part"),
+        "gates": body["gates"],
+        "decisions": body["decisions"],
+        "row_count": body["row_count"],
+        "max_abs_timing_error_ms": lens.get("max_abs_timing_error_ms"),
+        "unresolved": lens.get("unresolved", body["gates"]["blocking"]),
     }

@@ -15,3 +15,19 @@ groups:
         for: 1m
         labels: {severity: warning}
         annotations: {summary: "Telemetry pending export: Grafana may not yet contain the latest evidence."}
+  - name: orpheus-evidence
+    rules:
+      - alert: OrpheusEvidenceStale
+        expr: time() - timestamp(orpheus_export_pending) > 300
+        for: 2m
+        labels: {severity: info}
+        annotations: {summary: "No fresh evidence scrape in 5m; panels may show a stale Part."}
+      - alert: OrpheusToolFailuresSustained
+        expr: sum by (project_id, tool) (rate(orpheus_project_tool_events_total{outcome="failed"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "A tool keeps failing. Read the decision ledger before accepting the render."}
+      - alert: OrpheusClippedExport
+        expr: max by (project_id) (orpheus_candidate_clipped_samples) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Export contains clipped samples; do not approve without re-render."}

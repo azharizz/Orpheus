@@ -17,9 +17,14 @@ from .workflow_common import (
 
 class StateTools:
     async def query_grafana(
-        self, topic: str, candidate_id: str, tool_context: ToolContext
+        self,
+        topic: str,
+        candidate_id: str,
+        tool_context: ToolContext,
+        part_start_s: float = 0,
+        part_end_s: float = 0,
     ) -> dict:
-        """Investigate CURRENT project through official Grafana MCP. topic history/failures/sound/takes queries Loki; runtime queries Prometheus health, backlog, failures and active alerts. candidate_id empty or saved render ID. MUST query history before new experiments and sound AFTER measuring a candidate. Query runtime/failures to diagnose degraded service; never equate failed perception with absent sound. For recording sessions query takes to compare recordings. Raw media stays local. Returns evidence and pending-export status. Empty/failed queries are not a quality pass; avoid repeating unchanged failures."""
+        """Investigate CURRENT project through official Grafana MCP. topic history/failures/sound/takes queries Loki; runtime queries Prometheus health, backlog, failures and active alerts; part scopes every read to one picture range and requires part_start_s < part_end_s. candidate_id empty or saved render ID. MUST query history before new experiments and sound AFTER measuring a candidate. Use part to argue about the same picture range the reviewer sees, and read its decisions and unresolved fields before claiming a Part is correct. Query runtime/failures to diagnose degraded service; never equate failed perception with absent sound. For recording sessions query takes to compare recordings. Raw media stays local. Returns evidence and pending-export status. Empty/failed queries are not a quality pass; avoid repeating unchanged failures."""
         pid = (
             self.case.get("take_parent_project_id", self.case["id"])
             if topic == "takes"
@@ -29,9 +34,20 @@ class StateTools:
             c["id"] for c in tool_context.state.get("candidates", [])
         ]:
             return {"error": "Unknown candidate"}
-        result = await obs.investigate(pid, topic, candidate_id)
+        part = None
+        if topic == "part":
+            try:
+                part = obs.part_context(
+                    pid, part_start_s=part_start_s, part_end_s=part_end_s
+                )
+            except ValueError as exc:
+                return {"error": str(exc)}
+        result = await obs.investigate(pid, topic, candidate_id, part)
         receipts = dict(tool_context.state.get("grafana_receipts", {}))
-        receipts[topic + ":" + candidate_id] = result
+        key = topic + ":" + candidate_id
+        if part:
+            key += f":{part['part_start_s']}-{part['part_end_s']}"
+        receipts[key] = result
         tool_context.state["grafana_receipts"] = receipts
         self.log(
             "grafana_investigation",

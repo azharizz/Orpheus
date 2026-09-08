@@ -72,6 +72,14 @@ def save_review(data):
     obs.emit(
         case["id"],
         "human_review",
-        {**record, "parent_project_id": case.get("take_parent_project_id", case["id"])},
+        {
+            **record,
+            "parent_project_id": case.get("take_parent_project_id", case["id"]),
+            **{
+                key: rendered[key]
+                for key in ("part_start_s", "part_end_s", "family_id")
+                if key in rendered
+            },
+        },
     )
     return record

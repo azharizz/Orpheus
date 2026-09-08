@@ -217,10 +217,13 @@ function AddExample({ project, family, position, disabled }) {
   </form>;
 }
 
-export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "", candidate = null }) {
+export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "", candidate = null, state = {} }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
   const [auditioning, setAuditioning] = useState("");
+  const renderWaiting = state.operation?.kind === "full_render" && state.operation.family_id === family.id
+    ? state.operation
+    : null;
   const pageSize = Math.max(1, Number(requestedPageSize) || 5);
   const [page, setPage] = useState(() => {
     const index = focusId ? matches.findIndex((match) => match.id === focusId) : -1;
@@ -275,6 +278,12 @@ export function MatchReview({ project, family, disabled, onPreview = () => {}, p
           </p>
         </div>
       </div>
+      <WorkflowProgress
+        activity={renderActivity(family)}
+        waiting={renderWaiting}
+        title="Full-movie preview"
+        candidateId={family.latest_render_id}
+      />
       {matches.length ? (
         <>
           <ol className="match-list">
@@ -600,7 +609,7 @@ export function FamilyWorkbench({
               {rangesCount(family.rejected_ranges)} excluded
             </p>
           </div>
-          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} candidate={candidate} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
+          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} candidate={candidate} state={state} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
           {family.scope !== "part" && project.seconds >= 300 && <div className="family-full-link"><span>Review {(family.pending_matches || []).length} proposed matches in the film spine.</span>{onReview && <button type="button" onClick={() => onReview(family.id)}>Open review</button>}</div>}
           {family.scope !== "part" && agentTurn && <WorkflowProgress activity={agentActivity(agentTurn)} title="Agent-coordinated fit" candidateId={agentTurn.selection?.candidate_id || agentTurn.candidates?.at(-1)?.id} />}
           {family.warning && <p className="warning">{family.warning}</p>}

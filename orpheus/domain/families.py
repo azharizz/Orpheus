@@ -656,6 +656,14 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         if phase == last_progress["phase"] and value <= last_progress["value"]:
             return
         last_progress.update(phase=phase, value=value)
+        obs.emit(pid, "render_progress", {
+            "family_id": family_id,
+            "candidate_id": render_id,
+            "name": phase,
+            "status": "running",
+            "kind": "full_movie" if full_movie else "part",
+            "measurements": {"progress": value},
+        })
         if full_movie and persist:
             family["render_progress"] = {
                 "status": "running",
@@ -730,6 +738,9 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         "human_approved": False,
         "warning": "Only accepted windows were ducked. No source separation was applied.",
     }
+    covered = [bound for item in accepted for bound in item["range_s"]]
+    if len(set(covered)) > 1:
+        receipt.update(obs.part_context(pid, family_id, min(covered), max(covered)))
     atomic(folder / f"{render_id}.json", receipt)
     if persist:
         family["latest_render_id"] = render_id

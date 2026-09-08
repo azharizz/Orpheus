@@ -752,7 +752,7 @@ class MappedWorkflow(unittest.TestCase):
                     },
                 },
             )
-            async def grafana(_pid, topic, candidate_id=""):
+            async def grafana(_pid, topic, candidate_id="", part=None):
                 return {
                     "status": "ok",
                     "topic": topic,
