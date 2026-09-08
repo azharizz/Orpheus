@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { action, loadFamilies, post, update } from "../state/store.js";
 import { matchRange, pageWindow, pendingMatches, seedRange, time, label } from "../state/domain.js";
+import { workflowProgressModel } from "../state/progress.js";
 import { Recorder } from "./takes.jsx";
 import { Review } from "./review.jsx";
 
@@ -24,33 +25,46 @@ export function IndexStatus({ project, data }) {
   );
 }
 
-function WorkflowProgress({ activity, waiting, title, candidateId = "" }) {
-  if (!activity && !waiting) return null;
-  const status = activity?.status || (waiting ? "running" : "starting");
-  const progress = Number(activity?.progress);
-  const hasProgress = Number.isFinite(progress);
-  const detail = activity?.label || activity?.message || waiting?.label || "Starting local work…";
-  const counts = activity && (activity.cycle || activity.candidate_count)
-    ? [activity.cycle ? `Cycle ${activity.cycle}` : "", activity.candidate_count ? `${activity.candidate_count} candidate${activity.candidate_count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")
-    : "";
-  const candidate = activity?.render_id || candidateId;
-  return <section className={`workflow-progress workflow-progress-${status}`} role="status" aria-live="polite">
+export function WorkflowProgress({ activity, waiting, title, candidateId = "" }) {
+  const model = workflowProgressModel(activity, waiting);
+  if (!model) return null;
+  const candidate = model.candidate || (!model.active ? candidateId : "");
+  return <section
+    className={`workflow-progress workflow-progress-${model.status}${model.hasProgress ? "" : " workflow-progress-indeterminate"}`}
+    role="status"
+    aria-live="polite"
+    aria-busy={model.active}
+  >
     <div className="workflow-progress-head">
       <span className="workflow-progress-mark" aria-hidden="true" />
-      <div><strong>{title}</strong><p>{detail}{counts ? ` · ${counts}` : ""}{candidate ? ` · ${status === "stale" ? "Last" : "Candidate"} ${candidate}` : ""}</p></div>
-      {hasProgress && <output>{Math.max(0, Math.min(100, Math.round(progress)))}%</output>}
+      <div>
+        <strong>{title}</strong>
+        <p><span className="workflow-progress-phase">{model.phase}</span> · {model.detail}{model.counts ? ` · ${model.counts}` : ""}{candidate ? ` · ${model.status === "stale" ? "Last" : "Candidate"} ${candidate}` : ""}</p>
+      </div>
+      <span className="workflow-progress-status">{model.statusLabel}</span>
+      {model.hasProgress && <output aria-label={`${Math.round(model.progress)} percent complete`}>{Math.round(model.progress)}%</output>}
     </div>
-    {hasProgress && <div className="workflow-progress-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>}
+    <div
+      className="workflow-progress-track"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={model.hasProgress ? Math.round(model.progress) : undefined}
+      aria-valuetext={model.hasProgress ? `${Math.round(model.progress)} percent complete` : "Working; completion percentage is not available yet"}
+    >
+      <i style={model.hasProgress ? { width: `${model.progress}%` } : undefined} />
+    </div>
+    {model.active && <p className="workflow-progress-live"><span aria-hidden="true" /> Live update · checking the saved receipt every second</p>}
   </section>;
 }
 
-function latestTurn(project, family) {
+export function latestTurn(project, family) {
   return [...(project.turn_details || [])]
     .filter((turn) => turn.family_id === family.id)
     .sort((left, right) => Number(right.started_at) - Number(left.started_at))[0];
 }
 
-function agentActivity(turn) {
+export function agentActivity(turn) {
   if (!turn) return null;
   if (turn.progress) return turn.progress;
   const failed = turn.status === "failed" || turn.status === "interrupted";
@@ -67,7 +81,7 @@ function agentActivity(turn) {
   };
 }
 
-function renderActivity(family) {
+export function renderActivity(family) {
   if (family.render_progress) return family.render_progress;
   if (!family.latest_render_id) return null;
   return {
@@ -203,7 +217,7 @@ function AddExample({ project, family, position, disabled }) {
   </form>;
 }
 
-export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "" }) {
+export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "", candidate = null }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
   const [auditioning, setAuditioning] = useState("");
@@ -268,6 +282,7 @@ export function MatchReview({ project, family, disabled, onPreview = () => {}, p
               const range = matchRange(match);
               const choice = decisions[match.id];
               const matchNumber = pageStart + index + 1;
+              const activeAudition = candidate?.preview_kind === "match_audition" && candidate.source_match_id === match.id;
               return (
                 <li key={match.id}>
                   <button
@@ -295,9 +310,20 @@ export function MatchReview({ project, family, disabled, onPreview = () => {}, p
                     </details>
                   )}
                   <div className="match-audition" aria-label={`Audition for match ${matchNumber}`}>
-                    <button type="button" disabled={disabled} onClick={() => onPreview(range, match)}>Original</button>
-                    <button type="button" disabled={disabled || !family.replacement_take_id || auditioning === match.id} onClick={() => audition(match)}>{auditioning === match.id ? "Preparing replacement…" : "Replacement"}</button>
+                    <button type="button" disabled={disabled} onClick={() => onPreview(range, match)}>Play original</button>
+                    <button
+                      type="button"
+                      className={`${auditioning === match.id ? "is-loading" : ""}${activeAudition ? " is-selected" : ""}`}
+                      disabled={disabled || !family.replacement_take_id || Boolean(auditioning)}
+                      aria-busy={auditioning === match.id}
+                      aria-pressed={activeAudition}
+                      onClick={() => audition(match)}
+                    >
+                      {auditioning === match.id && <i aria-hidden="true" />}
+                      {auditioning === match.id ? "Preparing replacement…" : activeAudition ? "Play replacement again" : "Play replacement"}
+                    </button>
                   </div>
+                  {auditioning === match.id && <p className="match-audition-status" role="status"><i aria-hidden="true" /> Building a short replacement audition for this moment…</p>}
                   <div className="match-actions" aria-label={`Decision for match ${matchNumber}`}>
                     <button
                       type="button"
@@ -365,6 +391,9 @@ function rangesCount(value) {
 function AgentFit({ project, family, disabled, state }) {
   const [feedback, setFeedback] = useState("");
   const [consent, setConsent] = useState(false);
+  const waiting = state.operation?.kind === "agent" && state.operation.family_id === family.id
+    ? state.operation
+    : null;
   async function run(event) {
     event.preventDefault();
     const result = await action(
@@ -380,6 +409,7 @@ function AgentFit({ project, family, disabled, state }) {
     if (result) setConsent(false);
   }
   const turn = latestTurn(project, family);
+  const running = Boolean(waiting) || (state.running && turn?.status === "running");
   return (
     <form className="agent-fit" onSubmit={run}>
       <h3>Agent-coordinated family fit</h3>
@@ -416,11 +446,13 @@ function AgentFit({ project, family, disabled, state }) {
       </label>
       <button
         className="primary"
-        disabled={disabled || !consent || !state.observability?.enabled || !state.config?.provider_ready}
+        disabled={disabled || running || !consent || !state.observability?.enabled || !state.config?.provider_ready}
+        aria-busy={running}
       >
-        Run agent-coordinated fit
+        {running && <i className="button-spinner" aria-hidden="true" />}
+        {running ? "Agent fitting in progress…" : "Run agent-coordinated fit"}
       </button>
-      <WorkflowProgress activity={agentActivity(turn)} waiting={state.operation?.kind === "agent" && state.operation.family_id === family.id ? state.operation : null} title="Agent-coordinated fit" candidateId={turn?.selection?.candidate_id || turn?.candidates?.at(-1)?.id} />
+      <WorkflowProgress activity={agentActivity(turn)} waiting={waiting} title="Agent-coordinated fit" candidateId={turn?.selection?.candidate_id || turn?.candidates?.at(-1)?.id} />
     </form>
   );
 }
@@ -457,6 +489,9 @@ function PartRender({ project, family, disabled, candidate, state, onCandidate, 
 
 function FullMovieRender({ project, family, disabled, candidate, state, onCandidate }) {
   const pending = (family.pending_matches || []).length;
+  const waiting = state.operation?.kind === "full_render" && state.operation.family_id === family.id
+    ? state.operation
+    : null;
   async function render() {
     const result = await action(
       () => post("/api/families/render", { project_id: project.id, family_id: family.id }),
@@ -466,13 +501,16 @@ function FullMovieRender({ project, family, disabled, candidate, state, onCandid
     if (result) onCandidate(result);
   }
   const current = candidate?.family_id === family.id && candidate.preview_kind !== "match_audition" ? candidate : family.latest_render;
+  const rendering = Boolean(waiting) || family.render_progress?.status === "running";
   return <section className="family-step">
     <div className="step-heading"><span className="step-number">04</span><div>
       <h2>Render approved full movie</h2>
       <p>The offline renderer fits only reviewed family ranges and preserves every other sample and the picture.</p>
     </div></div>
-    <button className="primary" disabled={disabled || !family.replacement_take_id} onClick={render}>Preview accepted events</button>
-    <WorkflowProgress activity={renderActivity(family)} waiting={state.operation?.kind === "full_render" && state.operation.family_id === family.id ? state.operation : null} title="Full-movie preview" candidateId={current?.id || family.latest_render_id} />
+    <button className="primary" disabled={disabled || rendering || !family.replacement_take_id} onClick={render} aria-busy={rendering}>
+      {rendering ? <><i className="button-spinner" aria-hidden="true" /> Replacing accepted events…</> : "Preview accepted events"}
+    </button>
+    <WorkflowProgress activity={renderActivity(family)} waiting={waiting} title="Full-movie preview" candidateId={current?.id || family.latest_render_id} />
     {pending > 0 && <p className="muted">Only accepted events will change. All {pending} awaiting-review matches keep their original audio.</p>}
     {current && <Review p={project} c={current} locked={disabled} />}
   </section>;
@@ -562,7 +600,7 @@ export function FamilyWorkbench({
               {rangesCount(family.rejected_ranges)} excluded
             </p>
           </div>
-          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
+          {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} candidate={candidate} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
           {family.scope !== "part" && project.seconds >= 300 && <div className="family-full-link"><span>Review {(family.pending_matches || []).length} proposed matches in the film spine.</span>{onReview && <button type="button" onClick={() => onReview(family.id)}>Open review</button>}</div>}
           {family.scope !== "part" && agentTurn && <WorkflowProgress activity={agentActivity(agentTurn)} title="Agent-coordinated fit" candidateId={agentTurn.selection?.candidate_id || agentTurn.candidates?.at(-1)?.id} />}
           {family.warning && <p className="warning">{family.warning}</p>}

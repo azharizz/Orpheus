@@ -378,6 +378,10 @@ class FamilyTests(unittest.TestCase):
         self.assertTrue(receipt["metrics"]["picture_unchanged"])
         self.assertEqual(receipt["metrics"]["clipped_samples"], 0)
         self.assertTrue((self.folder / receipt["video"]).is_file())
+        progress = families.get(PID, family["id"])["render_progress"]
+        self.assertEqual(progress["status"], "complete")
+        self.assertEqual(progress["progress"], 100)
+        self.assertEqual(progress["render_id"], receipt["id"])
         self.assertTrue((self.folder / receipt["master"]).is_file())
         families.record_render_review(PID, family["id"], receipt["id"], "approve")
         saved = json.loads((self.folder / f"{receipt['id']}.json").read_text())

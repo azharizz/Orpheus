@@ -112,6 +112,12 @@
   border-inline: 1px solid var(--rule-subtle);
   font-size: 14px;
 }
+.workspace-activity {
+  margin-top: 12px;
+}
+.workspace-activity .workflow-progress {
+  margin-top: 0;
+}
 .latest-preview {
   color: var(--accent);
   font: 600 12px/1 ui-monospace, monospace;
