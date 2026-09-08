@@ -1,5 +1,10 @@
 # Orpheus
 
+> [!NOTE]
+> **Cloud deployment lives in [azharizz/orpheus-agentic](https://github.com/azharizz/orpheus-agentic).**
+>
+> That repository holds the GCP build (Firebase Hosting, Cloud Run, Agent Engine, Cloud SQL) and its deploy configuration. This repository is the local Foley workbench.
+
 A local Foley workbench: prepare picture and independent sound, explicitly run fitting, audition alternatives, inspect evidence, and retain human judgments. Fit, Record and Review share one workspace.
 
 ## Run locally
