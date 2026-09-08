@@ -90,3 +90,15 @@ test("part preview maps global picture time to local audio time", async () => {
   t.seek(161.52);
   assert.ok(Math.abs(t.audio.currentTime - 7.18) < 1e-9);
 });
+
+test("queued replacement playback waits for its newly bound audio", async () => {
+  const t = new Transport();
+  t.video = media();
+  t.video.currentTime = 12;
+  t.track = "a";
+  t.queuePlayback(12.5);
+  t.audio = media();
+  await t.ready();
+  assert.equal(t.video.paused, false);
+  assert.equal(t.stopAt, 12.5);
+});

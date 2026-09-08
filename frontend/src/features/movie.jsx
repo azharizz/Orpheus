@@ -68,6 +68,19 @@ export function MovieOverview({ project, movie, families, state, running, positi
         </button>;
       })}
     </div>
+    <label className="spine-scrubber">
+      <span>Picture time <output>{time(position)}</output></span>
+      <input
+        type="range"
+        min="0"
+        max={project.seconds}
+        step="0.01"
+        value={position}
+        aria-label="Scrub picture time"
+        aria-valuetext={time(position)}
+        onChange={(event) => seek(event.target.value)}
+      />
+    </label>
     <div className="spine-ruler" aria-hidden="true"><span>{time(0)}</span><span>{time(project.seconds / 2)}</span><span>{time(project.seconds)}</span></div>
 
     <div className="film-status">

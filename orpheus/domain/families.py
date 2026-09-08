@@ -465,6 +465,15 @@ def review(pid, family_id, accepted_ids, rejected_ids):
     doc["pending_matches"] = _rank(
         load(pid), index, doc["accepted_ranges"], doc["rejected_ranges"], excluded
     )
+    if doc.get("latest_render_id"):
+        doc["render_progress"] = {
+            "status": "stale",
+            "kind": "full_movie",
+            "phase": "stale",
+            "progress": 0,
+            "message": "Reviewed matches changed. Build a new full-movie preview.",
+            "updated_at": time.time(),
+        }
     doc["search_version"] += 1
     doc["status"] = "review_required" if doc["pending_matches"] else "ready"
     doc["updated_at"] = time.time()
@@ -575,6 +584,13 @@ def _read_pcm(path):
     samples = _read_range(path, 0, frames)
     return samples.reshape(-1, channels) if channels == 2 else samples
 
+def _write_pcm(path, samples):
+    samples = np.asarray(samples, dtype=np.float32)
+    channels = 2 if samples.ndim == 2 else 1
+    with wave.open(str(path), "wb") as output:
+        output.setparams((channels, 2, RATE, len(samples), "NONE", "not compressed"))
+        output.writeframes(np.clip(np.round(samples * 32768), -32768, 32767).astype("<i2").tobytes())
+
 def _pcm_chunks(path):
     frames, channels = _wav_shape(path)
     with wave.open(str(path), "rb") as stream:
@@ -598,17 +614,20 @@ def _write_selective_wav(
     *,
     variants=None,
     timeline_offset_s=0,
+    on_progress=None,
 ):
     from .family_render import write_selective_wav
 
     return write_selective_wav(
         original_path, output_path, replacement, matches, duck_db, ramp_s,
         replacement_gain_db, variants=variants, timeline_offset_s=timeline_offset_s,
+        on_progress=on_progress,
     )
 
 def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
            ramp_s=0.025, replacement_gain_db=0, case=None, accepted=None,
            persist=True):
+    full_movie = case is None
     case = case or load(pid)
     family = _load_family(pid, family_id)
     take_id = take_id or family.get("replacement_take_id")
@@ -630,28 +649,62 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
     folder.mkdir(parents=True, exist_ok=True)
     render_id = uuid.uuid4().hex[:12]
     wav_path, video_path = folder / f"{render_id}.wav", folder / f"{render_id}.mp4"
+    last_progress = {"phase": "", "value": -1}
+
+    def report(phase, value, message):
+        value = max(0, min(100, int(round(value))))
+        if phase == last_progress["phase"] and value <= last_progress["value"]:
+            return
+        last_progress.update(phase=phase, value=value)
+        if full_movie and persist:
+            family["render_progress"] = {
+                "status": "running",
+                "kind": "full_movie",
+                "render_id": render_id,
+                "phase": phase,
+                "progress": value,
+                "message": message,
+                "updated_at": time.time(),
+            }
+            atomic(_family_path(pid, family_id), family)
+
     learned = family.get("approved_agent_fitting", {})
     variants = learned.get("agent_fitting", {}).get("arrangement", {}).get("rows", [])
-    mix = _write_selective_wav(
-        mix_path, wav_path, _mono(_read_pcm(source_path)), accepted,
-        duck_db, ramp_s, replacement_gain_db, variants=variants,
-        timeline_offset_s=float(learned.get("timeline_offset_s", 0)),
-    )
-    ff(
-        "-i", case["video_path"], "-i", wav_path,
-        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "192k", "-t", case["seconds"], video_path,
-    )
-    source_video = Path(case.get("source_video_path", case["video_path"]))
-    master_suffix = ".mp4" if source_video.suffix.lower() == ".mp4" else ".mkv"
-    master_path = folder / f"{render_id}-master{master_suffix}"
-    ff(
-        "-i", source_video, "-i", wav_path, "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", case["seconds"], master_path,
-    )
-    picture_unchanged = media.picture_hash(source_video) == media.picture_hash(master_path)
-    if not picture_unchanged:
-        raise ValueError("Picture preservation failed")
+    report("preparing", 0, "Preparing the full-movie selective render")
+    try:
+        mix = _write_selective_wav(
+            mix_path, wav_path, _mono(_read_pcm(source_path)), accepted,
+            duck_db, ramp_s, replacement_gain_db, variants=variants,
+            timeline_offset_s=float(learned.get("timeline_offset_s", 0)), on_progress=report,
+        )
+        report("preview", 84, "Muxing the browser preview")
+        ff(
+            "-i", case["video_path"], "-i", wav_path,
+            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k", "-t", case["seconds"], video_path,
+        )
+        source_video = Path(case.get("source_video_path", case["video_path"]))
+        master_suffix = ".mp4" if source_video.suffix.lower() == ".mp4" else ".mkv"
+        master_path = folder / f"{render_id}-master{master_suffix}"
+        report("master", 90, "Muxing the preserved-picture master")
+        ff(
+            "-i", source_video, "-i", wav_path, "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", case["seconds"], master_path,
+        )
+        report("picture", 95, "Checking picture integrity")
+        if media.picture_hash(source_video) != media.picture_hash(master_path):
+            raise ValueError("Picture preservation failed")
+        report("measure", 98, "Measuring loudness and clipping")
+        metrics = {**media.measure_export(video_path), "picture_unchanged": True, "clipped_samples": 0}
+    except Exception:
+        if full_movie and persist:
+            family["render_progress"] = {
+                "status": "failed", "kind": "full_movie", "render_id": render_id,
+                "phase": "failed", "progress": last_progress["value"],
+                "message": "Full-movie preview failed before completion.", "updated_at": time.time(),
+            }
+            atomic(_family_path(pid, family_id), family)
+        raise
     receipt = {
         "id": render_id,
         "schema": "family-render.v1",
@@ -667,20 +720,13 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
         "audio_sha256": _sha256(wav_path),
         "arrangement": {"schema": "family-arrangement.v1", "rows": [
                 {
-                    "id": item["id"],
-                    "family_id": family_id,
-                    "take_id": take_id,
-                    "target_range_s": item["range_s"],
-                    "target_anchor_s": item["refined_anchor_s"],
+                    "id": item["id"], "family_id": family_id, "take_id": take_id,
+                    "target_range_s": item["range_s"], "target_anchor_s": item["refined_anchor_s"],
                 }
                 for item in accepted
             ]},
         "mix": mix,
-        "metrics": {
-            **media.measure_export(video_path),
-            "picture_unchanged": True,
-            "clipped_samples": 0,
-        },
+        "metrics": metrics,
         "human_approved": False,
         "warning": "Only accepted windows were ducked. No source separation was applied.",
     }
@@ -691,11 +737,95 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
             "id", "video", "master", "wav", "render_mode", "audio_sha256",
             "timeline_offset_s", "preview_duration_s", "arrangement", "mix",
             "metrics", "human_approved", "warning")}
+        if full_movie:
+            family["render_progress"] = {
+                "status": "complete", "kind": "full_movie", "render_id": render_id,
+                "phase": "ready", "progress": 100,
+                "message": "Full-movie preview ready for review.", "updated_at": time.time(),
+            }
         family["updated_at"] = time.time()
         atomic(_family_path(pid, family_id), family)
     obs.emit(pid, "candidate", {
         **receipt, "measurements": {"accepted_events": len(accepted)}})
     return receipt
+
+
+def preview_match(pid, family_id, match_id):
+    """Build a bounded audition for one reviewed or pending movie match."""
+    family = _load_family(pid, family_id)
+    matches = {
+        item["id"]: item
+        for item in [*family.get("accepted_ranges", []), *family.get("pending_matches", [])]
+    }
+    if not isinstance(match_id, str) or match_id not in matches:
+        raise ValueError("Choose a current family match to audition")
+    take_id = family.get("replacement_take_id")
+    if not take_id:
+        raise ValueError("Assign a replacement take before auditioning a match")
+    from . import takes
+
+    case = load(pid)
+    source_path, _ = takes.validated_audio(pid, family_id, take_id)
+    item = matches[match_id]
+    start_s, end_s = _range(item["range_s"], float(case["seconds"]), "match range")
+    duration = min(15.0, float(case["seconds"]))
+    center = _finite(item["refined_anchor_s"], "refined anchor")
+    offset = max(0.0, min(float(case["seconds"]) - duration, center - duration / 2))
+    signature = json.dumps([family_id, match_id, take_id, _sha256(source_path), start_s, end_s, offset])
+    preview_id = hashlib.sha256(signature.encode()).hexdigest()[:12]
+    folder = project_dir(pid)
+    receipt_path = folder / f"{preview_id}.json"
+    wav_path = folder / f"{preview_id}.wav"
+    if receipt_path.exists() and wav_path.exists():
+        cached = json.loads(receipt_path.read_text())
+        if cached.get("preview_kind") == "match_audition" and cached.get("audio_sha256") == _sha256(wav_path):
+            return cached
+    frames = round(duration * RATE)
+    scratch = folder / f".{preview_id}-original.wav"
+    _write_pcm(scratch, _read_range(Path(case.get("mix_path", case["original_path"])), round(offset * RATE), frames))
+    local = {
+        **item,
+        "kind": "match",
+        "range_s": [start_s - offset, end_s - offset],
+        "refined_anchor_s": center - offset,
+    }
+    learned = family.get("approved_agent_fitting", {})
+    variants = learned.get("agent_fitting", {}).get("arrangement", {}).get("rows", [])
+    try:
+        mix = _write_selective_wav(
+            scratch, wav_path, _mono(_read_pcm(source_path)), [local], -12, 0.025, 0,
+            variants=variants,
+        )
+    finally:
+        scratch.unlink(missing_ok=True)
+    receipt = {
+        "id": preview_id,
+        "schema": "family-render.v1",
+        "project_id": pid,
+        "family_id": family_id,
+        "take_id": take_id,
+        "video": "",
+        "master": "",
+        "wav": wav_path.name,
+        "render_mode": "selective_duck_overlay",
+        "timeline_offset_s": offset,
+        "preview_duration_s": duration,
+        "audio_sha256": _sha256(wav_path),
+        "preview_kind": "match_audition",
+        "source_match_id": match_id,
+        "mix": mix,
+        "metrics": {},
+        "human_approved": False,
+        "warning": "Audition only. This does not alter the full-movie candidate or its approval state.",
+    }
+    atomic(receipt_path, receipt)
+    obs.emit(pid, "match_audition", {
+        "family_id": family_id, "mapping_id": match_id,
+        "start_s": start_s, "end_s": end_s,
+        "measurements": {"preview_duration_s": duration},
+    })
+    return receipt
+
 def record_render_review(pid, family_id, render_id, verdict):
     from .family_actions import record_render_review as action
     return action(pid, family_id, render_id, verdict)

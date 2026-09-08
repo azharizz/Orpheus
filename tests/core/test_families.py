@@ -273,14 +273,34 @@ class FamilyTests(unittest.TestCase):
             {"kind": "impact", "disposition": "use", "source_range_s": [0.55, 0.7], "source_anchor_s": 0.6},
         ]
         output = self.folder / "variant-render.wav"
+        progress = []
         receipt = families._write_selective_wav(
             self.folder / "original.wav", output, replacement, matches, -12, 0.025, 0,
-            variants=variants,
+            variants=variants, on_progress=lambda phase, percent, _message: progress.append((phase, percent)),
         )
         rendered = families._mono(families._read_pcm(output))
         self.assertEqual(receipt["learned_source_variants"], 2)
         self.assertGreater(np.max(np.abs(rendered[round(2 * RATE):round(2.3 * RATE)])),
                            2 * np.max(np.abs(rendered[round(1 * RATE):round(1.3 * RATE)])))
+        self.assertEqual(progress[0][0], "headroom")
+        self.assertEqual(progress[-1][0], "mixing")
+
+    def test_match_audition_uses_the_assigned_family_take(self):
+        family = families.create(PID, "shoe", [0.48, 0.78])
+        take_folder = self.folder / "takes"
+        take_folder.mkdir()
+        take_id = "e" * 12
+        take_path = take_folder / f"{take_id}.wav"
+        write_wav(take_path, pulse(level=0.3))
+        (take_folder / f"{take_id}.json").write_text(json.dumps({
+            "id": take_id, "parent_project_id": PID, "family_id": family["id"],
+            "audio_sha256": families._sha256(take_path),
+        }))
+        families.assign_take(PID, family["id"], take_id)
+        preview = families.preview_match(PID, family["id"], family["accepted_ranges"][0]["id"])
+        self.assertEqual(preview["preview_kind"], "match_audition")
+        self.assertTrue((self.folder / preview["wav"]).is_file())
+        self.assertEqual(families.preview_match(PID, family["id"], family["accepted_ranges"][0]["id"])["id"], preview["id"])
 
     def test_agent_fitting_survives_later_full_render_review(self):
         family = families.create(PID, "shoe", [0.48, 0.78])

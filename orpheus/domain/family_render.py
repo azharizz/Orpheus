@@ -100,14 +100,19 @@ def _components(original, offset, events, duck_db):
     return original * (envelope[:, None] if original.ndim == 2 else envelope), layer
 
 
-def write_selective_wav(original_path, output_path, replacement, matches, duck_db, ramp_s, gain_db, *, variants=None, timeline_offset_s=0):
+def write_selective_wav(original_path, output_path, replacement, matches, duck_db, ramp_s, gain_db, *, variants=None, timeline_offset_s=0, on_progress=None):
     from . import families
 
     frames, channels = families._wav_shape(original_path)
     events, dialogue, variant_count = _events(
         original_path, replacement, matches, ramp_s, gain_db, variants, timeline_offset_s, families
     )
+    def report(phase, percent, message):
+        if on_progress:
+            on_progress(phase, percent, message)
+
     scale = 1.0
+    report("headroom", 5, "Checking replacement headroom")
     for offset, original in families._pcm_chunks(original_path):
         ducked, layer = _components(original, offset, events, duck_db)
         positive, negative = layer > 1e-9, layer < -1e-9
@@ -115,8 +120,10 @@ def write_selective_wav(original_path, output_path, replacement, matches, duck_d
             scale = min(scale, float(np.min((0.999 - ducked[positive]) / layer[positive])))
         if np.any(negative):
             scale = min(scale, float(np.min((-0.999 - ducked[negative]) / layer[negative])))
+        report("headroom", 5 + 43 * (offset + len(original)) / frames, "Checking replacement headroom")
     scale = min(1.0, max(0.0, scale))
     peak = 0.0
+    report("mixing", 48, "Writing the selective replacement mix")
     with wave.open(str(output_path), "wb") as output:
         output.setparams((channels, 2, RATE, frames, "NONE", "not compressed"))
         for offset, original in families._pcm_chunks(original_path):
@@ -124,6 +131,7 @@ def write_selective_wav(original_path, output_path, replacement, matches, duck_d
             mixed = ducked + layer * scale
             peak = max(peak, float(np.max(np.abs(mixed))))
             output.writeframes(np.clip(np.round(mixed * 32768), -32768, 32767).astype("<i2").tobytes())
+            report("mixing", 48 + 34 * (offset + len(original)) / frames, "Writing the selective replacement mix")
     if peak >= 1:
         output_path.unlink(missing_ok=True)
         raise ValueError("Replacement mix clips; lower the replacement gain")

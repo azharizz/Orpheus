@@ -24,6 +24,61 @@ export function IndexStatus({ project, data }) {
   );
 }
 
+function WorkflowProgress({ activity, waiting, title, candidateId = "" }) {
+  if (!activity && !waiting) return null;
+  const status = activity?.status || (waiting ? "running" : "starting");
+  const progress = Number(activity?.progress);
+  const hasProgress = Number.isFinite(progress);
+  const detail = activity?.label || activity?.message || waiting?.label || "Starting local work…";
+  const counts = activity && (activity.cycle || activity.candidate_count)
+    ? [activity.cycle ? `Cycle ${activity.cycle}` : "", activity.candidate_count ? `${activity.candidate_count} candidate${activity.candidate_count === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")
+    : "";
+  const candidate = activity?.render_id || candidateId;
+  return <section className={`workflow-progress workflow-progress-${status}`} role="status" aria-live="polite">
+    <div className="workflow-progress-head">
+      <span className="workflow-progress-mark" aria-hidden="true" />
+      <div><strong>{title}</strong><p>{detail}{counts ? ` · ${counts}` : ""}{candidate ? ` · ${status === "stale" ? "Last" : "Candidate"} ${candidate}` : ""}</p></div>
+      {hasProgress && <output>{Math.max(0, Math.min(100, Math.round(progress)))}%</output>}
+    </div>
+    {hasProgress && <div className="workflow-progress-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>}
+  </section>;
+}
+
+function latestTurn(project, family) {
+  return [...(project.turn_details || [])]
+    .filter((turn) => turn.family_id === family.id)
+    .sort((left, right) => Number(right.started_at) - Number(left.started_at))[0];
+}
+
+function agentActivity(turn) {
+  if (!turn) return null;
+  if (turn.progress) return turn.progress;
+  const failed = turn.status === "failed" || turn.status === "interrupted";
+  return {
+    status: turn.status || "complete",
+    phase: failed ? "failed" : "complete",
+    label: failed
+      ? "Agent run stopped before a reviewable candidate"
+      : turn.selection
+        ? "Candidate ready for human review"
+        : "Agent finished without a selected candidate",
+    cycle: turn.cycles || 0,
+    candidate_count: Array.isArray(turn.candidates) ? turn.candidates.length : 0,
+  };
+}
+
+function renderActivity(family) {
+  if (family.render_progress) return family.render_progress;
+  if (!family.latest_render_id) return null;
+  return {
+    status: "complete",
+    phase: "ready",
+    progress: 100,
+    message: "Full-movie preview ready for review.",
+    render_id: family.latest_render_id,
+  };
+}
+
 function NewFamily({ project, position, disabled, onCreated, defer }) {
   const [name, setName] = useState("");
   const [start, setStart] = useState(Math.max(0, position - 0.25));
@@ -151,6 +206,7 @@ function AddExample({ project, family, position, disabled }) {
 export function MatchReview({ project, family, disabled, onPreview = () => {}, pageSize: requestedPageSize = 5, focusId = "" }) {
   const matches = pendingMatches(family);
   const [decisions, setDecisions] = useState({});
+  const [auditioning, setAuditioning] = useState("");
   const pageSize = Math.max(1, Number(requestedPageSize) || 5);
   const [page, setPage] = useState(() => {
     const index = focusId ? matches.findIndex((match) => match.id === focusId) : -1;
@@ -182,6 +238,16 @@ export function MatchReview({ project, family, disabled, onPreview = () => {}, p
     const next = pageWindow(matches, nextPage, pageSize).items[0];
     setPage(nextPage);
     if (next) onPreview(matchRange(next), next);
+  }
+  async function audition(match) {
+    setAuditioning(match.id);
+    const result = await action(
+      () => post("/api/families/preview", { project_id: project.id, family_id: family.id, match_id: match.id }),
+      "Replacement audition ready.",
+      { kind: "match_preview", family_id: family.id, label: "Preparing this replacement audition" },
+    );
+    setAuditioning("");
+    if (result) onPreview(matchRange(match), match, result);
   }
   return (
     <section className="family-step" aria-labelledby="matches-title">
@@ -228,6 +294,10 @@ export function MatchReview({ project, family, disabled, onPreview = () => {}, p
                       <p>{match.evidence_summary}</p>
                     </details>
                   )}
+                  <div className="match-audition" aria-label={`Audition for match ${matchNumber}`}>
+                    <button type="button" disabled={disabled} onClick={() => onPreview(range, match)}>Original</button>
+                    <button type="button" disabled={disabled || !family.replacement_take_id || auditioning === match.id} onClick={() => audition(match)}>{auditioning === match.id ? "Preparing replacement…" : "Replacement"}</button>
+                  </div>
                   <div className="match-actions" aria-label={`Decision for match ${matchNumber}`}>
                     <button
                       type="button"
@@ -305,9 +375,11 @@ function AgentFit({ project, family, disabled, state }) {
         consent,
       }),
       "Agent fitting started. The workspace will show its measured render when complete.",
+      { kind: "agent", family_id: family.id, label: "Starting the agent-coordinated fit" },
     );
     if (result) setConsent(false);
   }
+  const turn = latestTurn(project, family);
   return (
     <form className="agent-fit" onSubmit={run}>
       <h3>Agent-coordinated family fit</h3>
@@ -348,6 +420,7 @@ function AgentFit({ project, family, disabled, state }) {
       >
         Run agent-coordinated fit
       </button>
+      <WorkflowProgress activity={agentActivity(turn)} waiting={state.operation?.kind === "agent" && state.operation.family_id === family.id ? state.operation : null} title="Agent-coordinated fit" candidateId={turn?.selection?.candidate_id || turn?.candidates?.at(-1)?.id} />
     </form>
   );
 }
@@ -364,7 +437,7 @@ function PartRender({ project, family, disabled, candidate, state, onCandidate, 
     onMovieSearch(family.id);
     return result;
   }, "Approved family searched across the full movie.");
-  const current = candidate?.family_id === family.id ? candidate : family.latest_render;
+  const current = candidate?.family_id === family.id && candidate.preview_kind !== "match_audition" ? candidate : family.latest_render;
   const approved = family.latest_render?.human_approved === true;
   return <>
     <section className="family-step">
@@ -382,22 +455,24 @@ function PartRender({ project, family, disabled, candidate, state, onCandidate, 
   </>;
 }
 
-function FullMovieRender({ project, family, disabled, candidate, onCandidate }) {
+function FullMovieRender({ project, family, disabled, candidate, state, onCandidate }) {
   const pending = (family.pending_matches || []).length;
   async function render() {
     const result = await action(
       () => post("/api/families/render", { project_id: project.id, family_id: family.id }),
       "Approved full-movie family render created.",
+      { kind: "full_render", family_id: family.id, label: "Starting the full-movie preview" },
     );
     if (result) onCandidate(result);
   }
-  const current = candidate?.family_id === family.id ? candidate : family.latest_render;
+  const current = candidate?.family_id === family.id && candidate.preview_kind !== "match_audition" ? candidate : family.latest_render;
   return <section className="family-step">
     <div className="step-heading"><span className="step-number">04</span><div>
       <h2>Render approved full movie</h2>
       <p>The offline renderer fits only reviewed family ranges and preserves every other sample and the picture.</p>
     </div></div>
     <button className="primary" disabled={disabled || !family.replacement_take_id} onClick={render}>Preview accepted events</button>
+    <WorkflowProgress activity={renderActivity(family)} waiting={state.operation?.kind === "full_render" && state.operation.family_id === family.id ? state.operation : null} title="Full-movie preview" candidateId={current?.id || family.latest_render_id} />
     {pending > 0 && <p className="muted">Only accepted events will change. All {pending} awaiting-review matches keep their original audio.</p>}
     {current && <Review p={project} c={current} locked={disabled} />}
   </section>;
@@ -425,6 +500,7 @@ export function FamilyWorkbench({
   const [chosen, setChosen] = useState(selectedFamilyId || "");
   const [adding, setAdding] = useState(false);
   const family = families.find((item) => item.id === chosen) || families[0];
+  const agentTurn = family ? latestTurn(project, family) : null;
   function created(id) {
     setChosen(id || "");
     setAdding(false);
@@ -488,6 +564,7 @@ export function FamilyWorkbench({
           </div>
           {family.scope !== "part" && project.seconds < 300 && <MatchReview key={family.id + ":" + (family.search_version || "")} project={project} family={family} disabled={disabled} pageSize={compact ? 1 : 5} onPreview={onPreview} />}
           {family.scope !== "part" && project.seconds >= 300 && <div className="family-full-link"><span>Review {(family.pending_matches || []).length} proposed matches in the film spine.</span>{onReview && <button type="button" onClick={() => onReview(family.id)}>Open review</button>}</div>}
+          {family.scope !== "part" && agentTurn && <WorkflowProgress activity={agentActivity(agentTurn)} title="Agent-coordinated fit" candidateId={agentTurn.selection?.candidate_id || agentTurn.candidates?.at(-1)?.id} />}
           {family.warning && <p className="warning">{family.warning}</p>}
           {family.scope === "part" && <AddExample project={project} family={family} position={position} disabled={disabled} />}
           <section className="family-step">
@@ -511,7 +588,7 @@ export function FamilyWorkbench({
           </section>
           {family.scope === "part"
             ? <PartRender project={project} family={family} disabled={disabled} candidate={candidate} state={state} onCandidate={onCandidate} onMovieSearch={onMovieSearch} />
-            : <FullMovieRender project={project} family={family} disabled={disabled} candidate={candidate} onCandidate={onCandidate} />}
+            : <FullMovieRender project={project} family={family} disabled={disabled} candidate={candidate} state={state} onCandidate={onCandidate} />}
         </>
       )}
     </div>

@@ -17,6 +17,32 @@ from orpheus.ops import observability as o
 
 
 class EvidenceChecks(unittest.TestCase):
+    def test_part_contract_is_exact_and_events_carry_context(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(o, "STORE", Path(tmp)),
+            patch.object(o, "DB", Path(tmp) / "db"),
+            patch.object(o, "config", return_value={"enabled": True}),
+        ):
+            context = o.part_context("1234567890abcdef", family_id="abcdef123456", part_start_s=12, part_end_s=27)
+            o.emit("1234567890abcdef", "candidate", {"id": "0123456789ab", **context, "metrics": {"clipped_samples": 0}})
+            with o.connect() as db:
+                row = json.loads(db.execute("SELECT payload FROM events").fetchone()[0])
+            self.assertEqual(row["evidence_contract"], o.EVIDENCE_CONTRACT_SCHEMA)
+            self.assertEqual(row["family_id"], "abcdef123456")
+            self.assertEqual(row["part_start_s"], 12)
+            with self.assertRaises(ValueError):
+                o.part_context("1234567890abcdef", part_start_s=3, part_end_s=3)
+
+    def test_config_repairs_legacy_dashboard_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            path = folder / "local.json"
+            path.write_text(json.dumps({"dashboard_url": "http://127.0.0.1:13000/d/orpheus/foley-evidence"}))
+            with patch.object(o, "CONFIG", path), patch.dict(os.environ, {}, clear=False):
+                value = o.config()
+            self.assertTrue(value["dashboard_url"].endswith("/d/orpheus/agentic-foley-control-room"))
+
     def test_project_metrics_compare_baseline_agent_and_review_state(self):
         with (
             tempfile.TemporaryDirectory() as tmp,

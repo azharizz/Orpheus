@@ -148,6 +148,13 @@
   align-items: center;
   padding-left: 24px;
 }
+.match-audition {
+  display: flex;
+  grid-column: 1;
+  gap: 10px;
+  padding: 2px 0 0 56px;
+}
+.match-audition button { min-width: 92px; }
 .match-actions button {
   min-width: 64px;
 }
@@ -241,6 +248,25 @@
   padding-top: 24px;
   border-top: 1px solid var(--rule-subtle);
 }
+.workflow-progress {
+  margin-top: 18px;
+  padding: 14px 0 12px;
+  border-block: 1px solid var(--rule-subtle);
+}
+.workflow-progress-head { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.workflow-progress-head strong { display: block; font-size: 14px; }
+.workflow-progress-head p { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; }
+.workflow-progress-head output { color: var(--accent); font: 600 13px/1 ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.workflow-progress-mark { width: 9px; height: 9px; margin-top: 4px; border: 1px solid var(--control-edge); background: var(--text-secondary); }
+.workflow-progress-running .workflow-progress-mark,
+.workflow-progress-starting .workflow-progress-mark { background: var(--accent); border-color: var(--accent); animation: workflow-pulse 1.2s ease-out infinite; }
+.workflow-progress-complete .workflow-progress-mark,
+.workflow-progress-review_required .workflow-progress-mark { background: var(--status-confirmed); border-color: var(--status-confirmed); }
+.workflow-progress-failed .workflow-progress-mark { background: var(--status-error); border-color: var(--status-error); }
+.workflow-progress-stale .workflow-progress-mark { background: var(--status-warning); border-color: var(--status-warning); }
+.workflow-progress-track { height: 2px; margin-top: 12px; background: var(--rule-subtle); overflow: hidden; }
+.workflow-progress-track i { display: block; height: 100%; background: var(--accent); }
+@keyframes workflow-pulse { 50% { opacity: .35; transform: scale(.72); } }
 .agent-ready {
   color: var(--status-confirmed);
   font-size: 14px;
@@ -288,6 +314,7 @@
   .match-actions {
     padding: 4px 0 0 56px;
   }
+  .match-audition { padding-left: 56px; }
   .match-evidence {
     margin-left: 56px;
   }
@@ -300,7 +327,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .match-cue {
+  .match-cue, .workflow-progress-mark {
     transition: none;
+    animation: none;
   }
 }

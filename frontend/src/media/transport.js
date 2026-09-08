@@ -14,7 +14,7 @@ export class Transport {
     const release = registerMedia(node);
     return () => {
       release();
-      this.audio = null;
+      if (this.audio === node) this.audio = null;
     };
   };
   audioTime(value = this.video?.currentTime || 0) {
@@ -49,9 +49,16 @@ export class Transport {
     if (this.video) this.video.currentTime = value;
     if (this.audio && this.track !== "original") this.audio.currentTime = this.audioTime(value);
   }
+  queuePlayback(stopAt) {
+    this.stopAt = stopAt;
+    this.resume = true;
+  }
   switchTrack(track, audioOffset = this.audioOffset) {
     this.audioOffset = Number(audioOffset) || 0;
-    if (track === this.track) return;
+    if (track === this.track) {
+      if (this.video) this.video.muted = track !== "original";
+      return;
+    }
     const resume = this.resume || (!!this.video && !this.video.paused);
     this.pause();
     this.resume = resume;
@@ -66,8 +73,9 @@ export class Transport {
     if (!this.video || !this.audio) return;
     this.audio.currentTime = this.audioTime();
     if (this.resume) {
+      const stopAt = this.stopAt;
       this.resume = false;
-      return this.play();
+      return this.play(stopAt);
     }
   }
   sync() {

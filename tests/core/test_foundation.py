@@ -193,6 +193,15 @@ class Foundation(unittest.TestCase):
             "provider_failure",
         )
 
+    def test_agent_progress_reports_a_real_phase_without_a_fake_percent(self):
+        from orpheus.server.worker import progress_for_event
+
+        turn = {"status": "running", "cycles": 2, "candidates": [{}]}
+        progress = progress_for_event("tool_call", {"name": "inspect_grafana"}, turn)
+        self.assertEqual(progress["phase"], "grafana")
+        self.assertEqual(progress["candidate_count"], 1)
+        self.assertNotIn("progress", progress)
+
     def test_inspection_discloses_limits(self):
         from orpheus.agent.workflow_common import inspection_scope
 

@@ -9,7 +9,7 @@ from ..ops import observability as obs
 from . import projects
 
 
-def candidate(case, candidate_id):
+def candidate(case, candidate_id, *, allow_audition=False):
     if not isinstance(candidate_id, str) or not re.fullmatch(
         r"[a-f0-9]{12}", candidate_id
     ):
@@ -31,7 +31,9 @@ def candidate(case, candidate_id):
     from . import families
 
     family = families.get(case["id"], result.get("family_id"))
-    if family.get("latest_render_id") != candidate_id:
+    if family.get("latest_render_id") != candidate_id and not (
+        allow_audition and result.get("preview_kind") == "match_audition"
+    ):
         raise ValueError("Choose the latest rendered family candidate.")
     if projects.digest(audio) != result["audio_sha256"]:
         raise ValueError(

@@ -347,7 +347,7 @@ function App() {
         )}
       </header>
       <div className="announcement" role="status" aria-live="polite">
-        {state.busy ? "Working…" : state.message}
+        {state.busy ? state.operation?.label || "Working…" : state.message}
       </div>
       {state.error && (
         <div className="error" role="alert">

@@ -76,11 +76,15 @@ function DetailsDrawer({ project, movie, family, state, candidate, onOpenFamily 
   </section>;
 }
 
-function ReviewWindow({ project, state, cue, position, partRange, recording, onSeek }) {
+function ReviewWindow({ project, state, cue, candidate, position, partRange, recording, onSeek }) {
   const [start, end] = partRange;
+  const audition = candidate?.preview_kind === "match_audition" && candidate.source_match_id === cue?.id ? candidate : null;
   return <section className="review-window" aria-label="Selected match waveform">
     <div><strong>Match at {time(cue?.time_s ?? position)}</strong><span>{time(start)} – {time(end)}</span></div>
-    <Wave pid={project.id} role="original" state={state} label="Original match waveform" position={position} start={start} end={end} bins={720} ranges={familyRanges(state.families[project.id])} select={recording.active ? null : onSeek} />
+    <div className="review-wave-stack">
+      <div><strong>Original</strong><Wave pid={project.id} role="original" state={state} label="Original match waveform" position={position} start={start} end={end} bins={720} ranges={familyRanges(state.families[project.id])} select={recording.active ? null : onSeek} /></div>
+      {audition ? <div><strong>Replacement audition</strong><Wave pid={project.id} role="candidate" cid={audition.id} state={state} label="Replacement audition waveform" position={position} start={start} end={end} bins={720} select={onSeek} /></div> : <p className="review-audition-hint">Choose Replacement below to compare this exact match.</p>}
+    </div>
   </section>;
 }
 
@@ -90,8 +94,9 @@ export function Workspace({ project: p, state }) {
   const [activeFamily, setActiveFamily] = useState(target.family);
   const familyData = state.families[p.id];
   const movie = state.movies[p.id];
+  const [auditionCandidate, setAuditionCandidate] = useState(null);
   const familyPreviews = (familyData?.families || []).map((family) => family.latest_render ? { ...family.latest_render, family_id: family.id } : null).filter(Boolean);
-  const all = [movie?.latest_render, ...familyPreviews, ...candidates(p)].filter(Boolean).filter((item, index, items) => items.findIndex((other) => other.id === item.id) === index);
+  const all = [auditionCandidate, movie?.latest_render, ...familyPreviews, ...candidates(p)].filter(Boolean).filter((item, index, items) => items.findIndex((other) => other.id === item.id) === index);
   const [chosen, setChosen] = useState("");
   const family = (familyData?.families || []).find((item) => item.id === activeFamily) || familyData?.families?.[0];
   const candidate = all.find((item) => item.id === chosen) || familyPreviews.find((item) => item.family_id === (family?.id || activeFamily)) || all.find((item) => item.id === p.latest_candidate_id) || all.at(-1);
@@ -158,25 +163,35 @@ export function Workspace({ project: p, state }) {
     setDrawer("details");
     setWorkspaceView("movie", position, activeFamily);
   }
-  function previewRange(range, item = {}) {
+  function previewRange(range, item = {}, replacement = null) {
     const cue = cueDetails({ ...item, range_s: range, family_id: item.family_id || activeFamily }, position, p.seconds, activeFamily);
     openCue(cue);
     transport.pause();
-    switchTrack("original");
+    if (replacement) {
+      setAuditionCandidate(replacement);
+      setChosen(replacement.id);
+      switchTrack("a", replacement);
+    } else switchTrack("original");
     transport.seek(cue.range_s[0]);
     setPosition(cue.range_s[0]);
-    transport.play(cue.range_s[1]).catch(fail);
+    if (replacement && candidate?.id !== replacement.id) transport.queuePlayback(cue.range_s[1]);
+    else transport.play(cue.range_s[1]).catch(fail);
   }
-  function previewReview(range, item = {}) {
+  function previewReview(range, item = {}, replacement = null) {
     const cue = cueDetails({ ...item, range_s: range, family_id: item.family_id || activeFamily }, position, p.seconds, activeFamily);
     setSelectedCue(cue);
     setPartCenter((cue.range_s[0] + cue.range_s[1]) / 2);
     setWorkspaceView("movie", cue.time_s, cue.family_id, cue.id || "");
     transport.pause();
-    switchTrack("original");
+    if (replacement) {
+      setAuditionCandidate(replacement);
+      setChosen(replacement.id);
+      switchTrack("a", replacement);
+    } else switchTrack("original");
     transport.seek(cue.range_s[0]);
     setPosition(cue.range_s[0]);
-    transport.play(cue.range_s[1]).catch(fail);
+    if (replacement && candidate?.id !== replacement.id) transport.queuePlayback(cue.range_s[1]);
+    else transport.play(cue.range_s[1]).catch(fail);
   }
   function switchTrack(next, selected = candidate) {
     transport.switchTrack(next, selected?.timeline_offset_s)?.catch(fail);
@@ -185,6 +200,7 @@ export function Workspace({ project: p, state }) {
   function chooseCandidate(value) {
     const selected = typeof value === "string" ? all.find((item) => item.id === value) : value;
     transport.pause();
+    setAuditionCandidate(selected?.preview_kind === "match_audition" ? selected : null);
     setChosen(selected?.id || "");
     if (selected) switchTrack("a", selected);
     else switchTrack("original");
@@ -207,7 +223,7 @@ export function Workspace({ project: p, state }) {
           onEnded={() => { setPlaying(false); transport.pause(); stopRecording(); }}
           onError={() => update({ error: "Picture could not load. Check the saved project media and retry." })} />
       </div><div className="picture-readout" aria-hidden="true"><span>{drawer === "cue" ? "Cue inspection" : drawer ? "Review desk" : "Film overview"}</span><span>{time(position)} / {time(p.seconds)}</span></div></div>
-      <audio ref={transport.bindAudio} src={track === "a" && candidate ? media(p.id, candidate.id + ".wav") : undefined} preload="metadata"
+      <audio key={track === "a" ? candidate?.id || "missing" : "original"} ref={transport.bindAudio} src={track === "a" && candidate ? media(p.id, candidate.id + ".wav") : undefined} preload="metadata"
         onLoadedMetadata={() => transport.ready()?.catch(fail)} onError={() => { transport.pause(); update({ error: "Replacement preview could not load. Return to Original or render again." }); }} />
       <div className="transport" aria-label="Picture transport">
         <button className="transport-play primary" disabled={recording.active || recording.pending} onClick={() => playing ? transport.pause() : transport.play().catch(fail)}>{playing ? "Pause" : "Play"}</button>
@@ -215,14 +231,14 @@ export function Workspace({ project: p, state }) {
         <label className="seek-label">Picture time<input type="number" value={Number(position.toFixed(3))} min="0" max={p.seconds} step="0.01" disabled={recording.active || recording.pending} onChange={(event) => seek(event.target.value)} /></label>
         <div className="audio-switch" aria-label="Audible soundtrack"><button aria-pressed={track === "original"} disabled={recording.active || recording.pending} onClick={() => switchTrack("original")}>Original</button><button aria-pressed={track === "a"} disabled={!candidate || recording.active || recording.pending} onClick={() => switchTrack("a")}>Replacement preview</button></div>
       </div>
-      <p className="track-status" role="status">Listening to {track === "original" ? "the preserved original" : `replacement preview ${candidate?.id}`}. Picture time stays fixed when switching.</p>
+      <p className="track-status" role="status"><span>Listening to {track === "original" ? "the preserved original" : `replacement preview ${candidate?.id}`}. Picture time stays fixed when switching.</span>{family?.latest_render_id && <output className="latest-preview">Latest preview · {family.latest_render_id}</output>}</p>
       <MovieOverview project={p} movie={movie} families={familyData?.families || []} state={state} running={state.running} position={position} seek={seek} activeFamily={activeFamily} onCue={openCue} onOpenFamily={openFamily} onOpenReview={openReview} onActiveFamilyChange={selectFamily} onOpenDetails={openDetails} />
     </div></div>
 
     <CueDrawer mode={drawer} onClose={() => { setDrawer(""); setWorkspaceView(view, position, activeFamily); }}>
       {drawer === "cue" && <CueDetail project={p} state={state} cue={selectedCue || { time_s: position }} candidate={candidate} previews={all} position={position} partRange={partRange} partSpan={partSpan} recording={recording} activeFamily={activeFamily} onSeek={seek} onCenter={() => setPartCenter(position)} onSpan={setPartSpan} onCandidate={chooseCandidate} onOpenReview={openReview} onOpenFamily={openFamily} onOpenDetails={openDetails} />}
       {drawer === "family" && <FamilyWorkbench key={activeFamily || "new"} project={p} data={familyData} state={state} position={position} disabled={locked} transport={transport} candidate={candidate} selectedFamilyId={activeFamily} onCandidate={chooseCandidate} onPreview={previewRange} onMovieSearch={(familyId) => { setActiveFamily(familyId); setDrawer(""); setWorkspaceView("movie", position, familyId); }} onReview={openReview} onFamilyChange={selectFamily} compact />}
-      {drawer === "review" && (family ? <><ReviewWindow project={p} state={state} cue={selectedCue} position={position} partRange={partRange} recording={recording} onSeek={seek} /><MatchReview key={`${family.id}:${family.search_version || ""}`} project={p} family={family} disabled={locked} pageSize={1} focusId={selectedCue?.id || ""} onPreview={previewReview} /></> : <p className="empty-line">Create or select a sound family before reviewing related moments.</p>)}
+      {drawer === "review" && (family ? <><ReviewWindow project={p} state={state} cue={selectedCue} candidate={candidate} position={position} partRange={partRange} recording={recording} onSeek={seek} /><MatchReview key={`${family.id}:${family.search_version || ""}`} project={p} family={family} disabled={locked} pageSize={1} focusId={selectedCue?.id || ""} onPreview={previewReview} /></> : <p className="empty-line">Create or select a sound family before reviewing related moments.</p>)}
       {drawer === "details" && <DetailsDrawer project={p} movie={movie} family={family} state={state} candidate={candidate} onOpenFamily={openFamily} />}
     </CueDrawer>
   </div>;

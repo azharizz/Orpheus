@@ -32,6 +32,42 @@ from ..ops import observability as obs
 APP = "orpheus"
 
 
+def progress_for_event(event, fields, turn):
+    """Persist the current agent step without inventing a completion percentage."""
+    prior = turn.get("progress", {})
+    phase, label = prior.get("phase", "preparing"), prior.get("label", "Preparing the confirmed Part")
+    labels = {
+        "deterministic_baseline": ("baseline", "Measuring the deterministic baseline"),
+        "session_loaded": ("context", "Preparing the agent context"),
+        "grafana_startup": ("grafana", "Reading Grafana history"),
+        "loop_cycle": ("fitting", f"Agent fitting cycle {fields.get('cycle', 0)}"),
+        "candidate": ("candidate", "Measuring the proposed replacement"),
+        "selection": ("selection", "Preparing the selected candidate"),
+        "session_saved": ("complete", "Candidate ready for human review" if turn.get("selection") else "Agent finished without a selected candidate"),
+        "failed": ("failed", "Agent run stopped before a reviewable candidate"),
+    }
+    if event == "tool_call":
+        name = str(fields.get("name", "")).lower()
+        if "grafana" in name:
+            phase, label = "grafana", "Reading Grafana evidence"
+        elif "render" in name or "arrange" in name:
+            phase, label = "fitting", "Fitting the replacement performance"
+        elif "measure" in name or "timing" in name:
+            phase, label = "measurement", "Measuring timing and loudness"
+        elif "frame" in name or "inspect" in name or "audio" in name:
+            phase, label = "inspection", "Inspecting the confirmed Part"
+    elif event in labels:
+        phase, label = labels[event]
+    return {
+        "status": turn.get("status", "running"),
+        "phase": phase,
+        "label": label,
+        "updated_at": time.time(),
+        "cycle": turn.get("cycles", 0),
+        "candidate_count": len(turn.get("candidates", [])),
+    }
+
+
 def failure_info(exc, phase, provider_exhausted=False):
     """Safe categories only: exception text may contain credentials/media payloads."""
     if isinstance(exc, LlmCallsLimitExceededError):
@@ -163,6 +199,14 @@ async def run_turn(pid, family_id, feedback):
         "cycles": 0,
         "candidates": [],
         "selection": None,
+        "progress": {
+            "status": "running",
+            "phase": "preparing",
+            "label": "Preparing the confirmed Part",
+            "updated_at": time.time(),
+            "cycle": 0,
+            "candidate_count": 0,
+        },
         "workflow_version": "orpheus",
         "max_controller_calls": MAX_CONTROLLER_CALLS,
         "code_hashes": {
@@ -181,6 +225,7 @@ async def run_turn(pid, family_id, feedback):
     doc["status"] = "running"
     doc["turns"].append(tid)
     atomic(folder / "project.json", doc)
+    atomic(folder / (tid + "-turn.json"), turn)
     provider_failed = False
 
     def log(event, **fields):
@@ -230,6 +275,7 @@ async def run_turn(pid, family_id, feedback):
                     [*turn.get("audio_evidence_ids", []), fields["evidence_id"]]
                 )
             )
+        turn["progress"] = progress_for_event(event, fields, turn)
         atomic(folder / (tid + "-turn.json"), turn)
         print(
             json.dumps(
@@ -498,6 +544,15 @@ async def run_turn(pid, family_id, feedback):
                 turn["status"] = "failed"
                 turn["failure"] = failure_info(exc, "cleanup")
         turn["finished_at"] = time.time()
+        turn["progress"] = {
+            **turn.get("progress", {}),
+            "status": turn["status"],
+            "phase": "failed" if turn["status"] == "failed" else "complete",
+            "label": "Agent run stopped before a reviewable candidate" if turn["status"] == "failed" else ("Candidate ready for human review" if turn.get("selection") else "Agent finished without a selected candidate"),
+            "updated_at": turn["finished_at"],
+            "cycle": turn.get("cycles", 0),
+            "candidate_count": len(turn.get("candidates", [])),
+        }
         atomic(folder / (tid + "-turn.json"), turn)
         obs.emit(
             pid,

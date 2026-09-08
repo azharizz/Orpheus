@@ -7,6 +7,7 @@ let state = {
   loading: true,
   error: "",
   busy: false,
+  operation: null,
   message: "",
   waveforms: {},
   takes: {},
@@ -20,15 +21,22 @@ export function update(patch) {
 }
 export const snapshot = () => state;
 let timer;
+function pollDelay() {
+  return state.busy || state.running ? 1000 : 4000;
+}
+function schedule(delay = pollDelay()) {
+  clearTimeout(timer);
+  if (!listeners.size) return;
+  timer = setTimeout(() => refresh().finally(schedule), delay);
+}
 function subscribe(fn) {
   listeners.add(fn);
   if (listeners.size === 1) {
-    refresh();
-    timer = setInterval(refresh, 4000);
+    refresh().finally(schedule);
   }
   return () => {
     listeners.delete(fn);
-    if (!listeners.size) clearInterval(timer);
+    if (!listeners.size) clearTimeout(timer);
   };
 }
 export const useStore = () => useSyncExternalStore(subscribe, snapshot);
@@ -53,7 +61,13 @@ export async function refresh() {
   const activeFamilyProject = familyProject;
   try {
     const data = await api("/api/projects");
-    update({ ...data, loading: false });
+    update({
+      ...data,
+      loading: false,
+      operation: !data.running && state.operation?.kind === "agent"
+        ? null
+        : state.operation,
+    });
   } catch (error) {
     update({ error: `Projects unavailable: ${error.message}`, loading: false });
   }
@@ -81,9 +95,10 @@ export async function refresh() {
   }
   refreshing = false;
 }
-export async function action(work, message) {
+export async function action(work, message, operation = null) {
   if (state.busy) return;
-  update({ busy: true, message: "", error: "" });
+  update({ busy: true, operation, message: "", error: "" });
+  schedule(1000);
   try {
     const result = await work();
     await refresh();
@@ -93,7 +108,11 @@ export async function action(work, message) {
     update({ error: error.message });
     return undefined;
   } finally {
-    update({ busy: false });
+    update({
+      busy: false,
+      operation: operation?.kind === "agent" && state.running ? operation : null,
+    });
+    schedule();
   }
 }
 export const media = (pid, name) =>
