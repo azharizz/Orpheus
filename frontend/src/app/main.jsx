@@ -111,6 +111,16 @@ function Import({ config, busy }) {
             onChange={(event) => setVideo(event.target.files[0] || null)}
           />
         </label>
+        {extras?.livestream && <p className="source-or">or</p>}
+        <StreamSource
+          extras={extras}
+          busy={busy}
+          onError={(error) => update({ error: String(error.message || error) })}
+          onImported={async (project) => {
+            await attachNarration(project.id, narration).catch(() => null);
+            window.location.assign("/workspace?project=" + project.id);
+          }}
+        />
         <label>
           What should make sound? <span className="muted">Optional</span>
           <input
@@ -128,15 +138,6 @@ function Import({ config, busy }) {
           />
         </label>
         <NarrationInput extras={extras} onFile={setNarration} />
-        <StreamSource
-          extras={extras}
-          busy={busy}
-          onError={(error) => update({ error: String(error.message || error) })}
-          onImported={async (project) => {
-            await attachNarration(project.id, narration).catch(() => null);
-            window.location.assign("/workspace?project=" + project.id);
-          }}
-        />
         <p>
           Orpheus preserves the original and indexes its soundtrack on this
           computer. Importing starts no paid inference.

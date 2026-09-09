@@ -60,7 +60,8 @@ export function GenerateTake({ extras, disabled, onGenerated, onError }) {
   return (
     <div className="generate-take">
       <label>
-        Or describe the sound <span className="muted">Optional</span>
+        Generate AI sound effect with Lyria{" "}
+        <span className="muted">Optional</span>
         <input
           value={prompt}
           maxLength={500}

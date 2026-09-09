@@ -127,3 +127,25 @@
     grid-row: 1 / span 2;
   }
 }
+
+.source-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.source-or::before,
+.source-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule-subtle);
+}
+.stream-source input[type="range"],
+.generate-take input[type="range"] {
+  accent-color: var(--accent);
+}
