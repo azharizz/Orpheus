@@ -1,18 +1,19 @@
-"""Render Orpheus's live production-path GIF and editable Draw.io source. Requires Pillow."""
+"""Render Orpheus's production-path GIF and editable Draw.io source. Requires Pillow."""
 from __future__ import annotations
 
 from base64 import b64encode
-from math import atan2, cos, hypot, pi, sin
+from math import atan2, cos, hypot, sin
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = Path(__file__).parent
 OUT = ROOT / "orpheus-live-production-path.gif"
 DRAWIO = ROOT / "orpheus-live-production-path.drawio"
 ICONS = ROOT / "gcp-icons"
-W, H, FPS, FRAMES = 1600, 980, 8, 28
+W, H, FPS, FRAMES = 1600, 940, 8, 28
+
 INK = "#203247"
 MUTED = "#50667D"
 RULE = "#C9D7E5"
@@ -23,9 +24,8 @@ ORANGE = "#FF5A36"
 BLUE = "#1689D4"
 MEDIA = "#2F80ED"
 EVIDENCE = "#64748B"
-GOLD = "#EAC17C"
+GOLD = "#D3912A"
 SAGE = "#5FAE7B"
-RED = "#E7645F"
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -41,52 +41,83 @@ def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 H1 = font(29, True)
-H2 = font(17, True)
+H2 = font(16, True)
 H3 = font(14, True)
 BODY = font(13)
 SMALL = font(11)
 TINY = font(10, True)
 
 
-class Card:
-    def __init__(self, key: str, x: int, y: int, w: int, h: int, title: str, body: tuple[str, ...], icon: str | None = None, tone: str = BLUE, dashed: bool = False):
-        self.key, self.x, self.y, self.w, self.h = key, x, y, w, h
-        self.title, self.body, self.icon, self.tone, self.dashed = title, body, icon, tone, dashed
+class Domain:
+    def __init__(self, key: str, box: tuple[int, int, int, int], title: str, note: str, tone: str = RULE):
+        self.key, self.box, self.title, self.note, self.tone = key, box, title, note, tone
 
+
+class Card:
+    def __init__(
+        self,
+        key: str,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        title: str,
+        body: tuple[str, ...],
+        icon: str | None = None,
+        tone: str = BLUE,
+        state: str = "DEPLOYED",
+    ):
+        self.key, self.x, self.y, self.w, self.h = key, x, y, w, h
+        self.title, self.body, self.icon, self.tone, self.state = title, body, icon, tone, state
+
+
+GOOGLE_CLOUD_BOUNDARY = (262, 92, 1190, 842)
+
+
+DOMAINS = (
+    Domain("creator", (24, 104, 250, 842), "CREATOR", "browser control", "#8095AA"),
+    Domain("delivery", (278, 104, 742, 386), "DELIVERY", "entry and API", "#76A6D7"),
+    Domain("coordination", (764, 104, 1178, 386), "AGENT COORDINATION", "Part-scoped fit", "#E4A263"),
+    Domain("media", (278, 410, 742, 730), "MEDIA PIPELINE", "deterministic work", "#76A6D7"),
+    Domain("evidence", (764, 410, 1178, 730), "EVIDENCE PLANE", "read-only history", "#96A3B4"),
+    Domain("external", (1202, 104, 1576, 842), "EXTERNAL ENDPOINTS", "no raw media", "#8A98A9"),
+)
 
 CARDS = (
-    Card("browser", 54, 244, 214, 164, "ORPHEUS WORKSPACE", ("React / Vite", "Picture, sound, review"), None, BLUE),
-    Card("hosting", 370, 170, 174, 132, "FIREBASE HOSTING", ("Static landing", "and workspace"), None, "#F9A825"),
-    Card("api", 610, 170, 220, 132, "ORPHEUS API", ("Cloud Run", "Runs + signed URLs"), "cloud-run", BLUE),
-    Card("agent", 916, 142, 262, 190, "AGENT BOUNDARY", ("Vertex AI / Agent Engine", "Part-scoped fitting", "Explicit paid turn"), "vertex-ai", ORANGE, True),
-    Card("worker", 484, 478, 238, 154, "ORPHEUS WORKER", ("Cloud Run Job", "FFmpeg + NumPy", "Deterministic render"), "cloud-run", MEDIA),
-    Card("storage", 790, 478, 252, 154, "MEDIA / ARTIFACTS", ("Cloud Storage", "Source · takes · exports", "Private bucket"), "cloud-storage", SAGE),
-    Card("mcp", 1074, 478, 150, 154, "GRAFANA MCP", ("Cloud Run", "Read-only", "Scoped"), None, EVIDENCE),
-    Card("secret", 610, 720, 220, 128, "SECRET MANAGER", ("Server-side identities", "Provider + MCP tokens"), None, RED),
-    Card("sql", 900, 720, 198, 128, "METADATA PROFILE", ("Cloud SQL", "Configured backend"), "cloud-sql", MUTED, True),
-    Card("grafana", 1294, 390, 246, 246, "GRAFANA CLOUD", ("Loki · Prometheus", "Tempo", "Evidence, not media"), None, "#F46800"),
-    Card("provider", 1294, 160, 246, 150, "MODEL PROFILE", ("Vertex / Gemini hosted", "OpenRouter local test"), "vertex-ai", "#7B61FF", True),
+    Card("browser", 48, 400, 178, 142, "ORPHEUS WORKSPACE", ("Creator marks a Part", "and reviews results"), None, BLUE),
+    Card("hosting", 310, 220, 178, 130, "FIREBASE HOSTING", ("Static web delivery", "Landing + workspace"), None, "#F9A825"),
+    Card("api", 526, 220, 180, 130, "ORPHEUS API", ("Cloud Run service", "Runs + signed URLs"), "cloud-run", BLUE),
+    Card("agent", 800, 220, 342, 130, "AGENT COORDINATOR", ("Vertex AI / Agent Engine", "Bounded Part fit"), "vertex-ai", ORANGE, "CONFIGURED"),
+    Card("worker", 310, 510, 178, 140, "ORPHEUS WORKER", ("Cloud Run Job", "FFmpeg + NumPy"), "cloud-run", MEDIA),
+    Card("storage", 526, 510, 180, 140, "MEDIA ARTIFACTS", ("Cloud Storage", "Source · takes · exports"), "cloud-storage", SAGE),
+    Card("mcp", 800, 510, 210, 140, "GRAFANA MCP", ("Cloud Run service", "Scoped read-only tools"), "cloud-run", EVIDENCE),
+    Card("provider", 1236, 220, 300, 130, "MODEL PROVIDER", ("Gemini hosted profile", "OpenRouter local test"), "vertex-ai", ORANGE, "CONFIGURED"),
+    Card("grafana", 1236, 510, 300, 140, "GRAFANA CLOUD", ("Loki · Prometheus · Tempo", "Evidence, not media"), None, "#F46800"),
 )
-CARD_BY_KEY = {card.key: card for card in CARDS}
+CARD = {card.key: card for card in CARDS}
 
-
+# Each animated path terminates at a service. Domains, cards, and dividers never march.
 PATHS = (
-    ("product", [(268, 250), (370, 250)], "START / REVIEW"),
-    ("product", [(544, 236), (610, 236)], "HOSTED REQUEST"),
-    ("product", [(830, 236), (916, 236)], "CONFIRMED PART"),
-    ("media", [(268, 350), (330, 350), (330, 555), (790, 555)], "SIGNED UPLOAD"),
-    ("media", [(720, 302), (720, 478)], "ASYNC JOB"),
-    ("media", [(1042, 555), (1074, 555)], ""),
-    ("media", [(1042, 555), (1058, 555), (1058, 420), (1294, 420)], "REDACTED TELEMETRY"),
-    ("evidence", [(830, 260), (868, 260), (868, 362), (1074, 362), (1074, 478)], "READ-ONLY EVIDENCE"),
-    ("evidence", [(1224, 555), (1294, 555)], "MCP QUERY"),
-    ("evidence", [(1178, 236), (1294, 236)], "MODEL CALL"),
-    ("secret", [(720, 720), (720, 632)], "SERVER-ONLY"),
-    ("secret", [(830, 784), (900, 784)], "METADATA"),
+    ("product", [(226, 471), (268, 471), (268, 285), (310, 285)], "OPEN WORKSPACE"),
+    ("product", [(488, 285), (526, 285)], ""),
+    ("product", [(706, 285), (800, 285)], "PART REQUEST"),
+    ("agent", [(1142, 285), (1236, 285)], "MODEL TURN"),
+    ("media", [(616, 350), (616, 450), (399, 450), (399, 510)], "START JOB"),
+    ("media", [(488, 580), (526, 580)], "WRITE ARTIFACT"),
+    ("evidence", [(971, 350), (971, 510)], "HISTORY QUERY"),
+    ("evidence", [(1010, 580), (1236, 580)], "READ-ONLY EVIDENCE"),
 )
+
+
+# The visible caption positions keep labels clear of every service card.
 LABEL_POSITIONS = {
-    "CONFIRMED PART": (846, 208),
-    "READ-ONLY EVIDENCE": (876, 340),
+    "OPEN WORKSPACE": (237, 435),
+    "PART REQUEST": (714, 259),
+    "MODEL TURN": (1153, 259),
+    "START JOB": (497, 421),
+    "WRITE ARTIFACT": (491, 555),
+    "HISTORY QUERY": (978, 420),
+    "READ-ONLY EVIDENCE": (1045, 555),
 }
 
 
@@ -99,7 +130,7 @@ def line_text(draw: ImageDraw.ImageDraw, x: int, y: int, values: tuple[str, ...]
         text(draw, (x, y + index * step), value, fill, face)
 
 
-def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: str, offset: int, width: int = 3, dash: int = 14, gap: int = 9) -> None:
+def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: str, offset: int, width: int = 3, dash: int = 13, gap: int = 9) -> None:
     dx, dy = end[0] - start[0], end[1] - start[1]
     length = hypot(dx, dy)
     if not length:
@@ -114,29 +145,17 @@ def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple
         position += period
 
 
-def path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: str, offset: int = 0, marching: bool = False, width: int = 3) -> None:
+def marching_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: str, offset: int) -> None:
     for first, second in zip(points, points[1:]):
-        if marching:
-            dashed_segment(draw, first, second, color, offset, width)
-        else:
-            draw.line((first, second), fill=color, width=width)
+        dashed_segment(draw, first, second, color, offset)
     before, final = points[-2], points[-1]
     angle = atan2(final[1] - before[1], final[0] - before[0])
-    size = 10
-    points_arrow = [
+    arrow = [
         final,
-        (final[0] - size * cos(angle - .48), final[1] - size * sin(angle - .48)),
-        (final[0] - size * cos(angle + .48), final[1] - size * sin(angle + .48)),
+        (final[0] - 10 * cos(angle - .48), final[1] - 10 * sin(angle - .48)),
+        (final[0] - 10 * cos(angle + .48), final[1] - 10 * sin(angle + .48)),
     ]
-    draw.polygon(points_arrow, fill=color)
-
-
-def dashed_rectangle(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], color: str, offset: int = 0, width: int = 2) -> None:
-    x1, y1, x2, y2 = box
-    dashed_segment(draw, (x1, y1), (x2, y1), color, offset, width, 13, 9)
-    dashed_segment(draw, (x2, y1), (x2, y2), color, offset, width, 13, 9)
-    dashed_segment(draw, (x2, y2), (x1, y2), color, offset, width, 13, 9)
-    dashed_segment(draw, (x1, y2), (x1, y1), color, offset, width, 13, 9)
+    draw.polygon(arrow, fill=color)
 
 
 def icon(name: str, size: int) -> Image.Image:
@@ -145,72 +164,70 @@ def icon(name: str, size: int) -> Image.Image:
     return image
 
 
-def draw_browser(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
-    draw.rounded_rectangle((x, y, x + 56, y + 45), radius=7, fill="#E7F2FD", outline=BLUE, width=2)
-    draw.rectangle((x + 7, y + 10, x + 49, y + 34), fill=PAPER, outline=RULE)
-    draw.line((x + 23, y + 45, x + 33, y + 45), fill=BLUE, width=2)
-    draw.line((x + 28, y + 45, x + 28, y + 54), fill=BLUE, width=2)
-    draw.line((x + 18, y + 54, x + 38, y + 54), fill=BLUE, width=2)
+def draw_browser(base: Image.Image, x: int, y: int) -> None:
+    draw = ImageDraw.Draw(base)
+    draw.rounded_rectangle((x, y, x + 50, y + 39), radius=6, fill="#E7F2FD", outline=BLUE, width=2)
+    draw.rectangle((x + 7, y + 9, x + 43, y + 30), fill=PAPER, outline=RULE)
+    draw.line((x + 20, y + 39, x + 30, y + 39), fill=BLUE, width=2)
+    draw.line((x + 25, y + 39, x + 25, y + 48), fill=BLUE, width=2)
+    draw.line((x + 16, y + 48, x + 34, y + 48), fill=BLUE, width=2)
 
 
-def draw_firebase(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
-    draw.polygon([(x + 7, y + 48), (x + 30, y + 4), (x + 46, y + 25), (x + 56, y + 48)], fill="#FFA000")
-    draw.polygon([(x + 7, y + 48), (x + 28, y + 28), (x + 46, y + 25), (x + 56, y + 48)], fill="#FFCA28")
-    draw.polygon([(x + 28, y + 28), (x + 33, y + 10), (x + 46, y + 25)], fill="#F57C00")
-
-
-def draw_lock(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
-    draw.rounded_rectangle((x + 6, y + 26, x + 52, y + 63), radius=5, outline=RED, width=4)
-    draw.arc((x + 16, y + 4, x + 42, y + 39), start=180, end=360, fill=RED, width=4)
-    draw.ellipse((x + 26, y + 40, x + 32, y + 46), fill=RED)
-    draw.line((x + 29, y + 46, x + 29, y + 55), fill=RED, width=3)
-
-
-def draw_grafana(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
+def draw_grafana(base: Image.Image, x: int, y: int) -> None:
+    draw = ImageDraw.Draw(base)
     for i in range(10):
-        angle = i * (2 * pi / 10)
-        cx, cy = x + 30 + cos(angle) * 24, y + 30 + sin(angle) * 24
-        draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill="#F46800")
-    draw.ellipse((x + 15, y + 15, x + 45, y + 45), fill="#F46800")
-    draw.ellipse((x + 23, y + 23, x + 37, y + 37), fill=PAPER)
+        angle = i * (6.28318530718 / 10)
+        cx, cy = x + 26 + cos(angle) * 21, y + 26 + sin(angle) * 21
+        draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill="#F46800")
+    draw.ellipse((x + 13, y + 13, x + 39, y + 39), fill="#F46800")
+    draw.ellipse((x + 20, y + 20, x + 32, y + 32), fill=PAPER)
+
+
+def status_badge(draw: ImageDraw.ImageDraw, x: int, y: int, value: str, tone: str) -> None:
+    width = 72 if value == "DEPLOYED" else 84
+    draw.rounded_rectangle((x, y, x + width, y + 20), radius=3, fill="#F2F6FA", outline=RULE)
+    draw.ellipse((x + 7, y + 7, x + 13, y + 13), fill=tone)
+    text(draw, (x + 19, y + 5), value, tone, TINY)
 
 
 def draw_card(base: Image.Image, card: Card) -> None:
     draw = ImageDraw.Draw(base)
     box = (card.x, card.y, card.x + card.w, card.y + card.h)
-    draw.rounded_rectangle(box, radius=10, fill=PAPER, outline=RULE if card.dashed else card.tone, width=2)
-    if card.dashed:
-        dashed_rectangle(draw, box, card.tone, width=2)
-    draw.rectangle((card.x + 15, card.y + 16, card.x + 21, card.y + card.h - 16), fill=card.tone)
-    icon_x, icon_y = card.x + 36, card.y + 22
+    draw.rounded_rectangle(box, radius=8, fill=PAPER, outline=card.tone, width=2)
+    icon_x, title_x = card.x + 16, card.x + 16
     if card.icon:
-        logo = icon(card.icon, 48)
-        base.alpha_composite(logo, (icon_x, icon_y))
-        title_x = icon_x + 61
+        base.alpha_composite(icon(card.icon, 43), (icon_x, card.y + 18))
+        title_x = icon_x + 54
     elif card.key == "browser":
-        draw_browser(draw, icon_x, icon_y)
-        title_x = icon_x
-        icon_y += 66
-    elif card.key == "hosting":
-        draw_firebase(draw, icon_x, icon_y)
-        title_x = icon_x + 65
-    elif card.key == "secret":
-        draw_lock(draw, icon_x, icon_y)
-        title_x = icon_x + 72
+        draw_browser(base, icon_x, card.y + 18)
+        title_x = icon_x + 62
     elif card.key == "grafana":
-        draw_grafana(draw, icon_x, icon_y)
-        title_x = icon_x + 72
-    else:
-        title_x = icon_x
-    text(draw, (title_x, card.y + 27), card.title, INK, H3)
-    body_y = card.y + 87 if card.key not in {"browser", "hosting", "secret", "grafana"} else card.y + 91
-    line_text(draw, card.x + 36, body_y, card.body, BODY, MUTED, 18)
+        draw_grafana(base, icon_x, card.y + 18)
+        title_x = icon_x + 62
+    text(draw, (title_x, card.y + 23), card.title, INK, H3)
+    status_badge(draw, card.x + 16, card.y + 73, card.state, card.tone)
+    line_text(draw, card.x + 16, card.y + 101, card.body, BODY, MUTED, 17)
+
+
+def draw_google_cloud_boundary(draw: ImageDraw.ImageDraw) -> None:
+    x1, y1, x2, y2 = GOOGLE_CLOUD_BOUNDARY
+    draw.rounded_rectangle(GOOGLE_CLOUD_BOUNDARY, radius=12, fill="#FFFFFF", outline="#5B7591", width=2)
+    draw.rounded_rectangle((x1 + 16, y1 - 12, x1 + 288, y1 + 12), radius=3, fill=PAPER)
+    text(draw, (x1 + 28, y1 - 7), "GOOGLE CLOUD / ORPHEUS-AGENTIC", INK, TINY)
+
+
+def draw_domain(draw: ImageDraw.ImageDraw, domain: Domain) -> None:
+    x1, y1, x2, y2 = domain.box
+    draw.rounded_rectangle(domain.box, radius=10, fill="#FBFCFD", outline=domain.tone, width=2)
+    draw.rectangle((x1 + 16, y1 + 16, x1 + 22, y1 + 48), fill=domain.tone)
+    text(draw, (x1 + 32, y1 + 17), domain.title, INK, H2)
+    text(draw, (x1 + 32, y1 + 37), domain.note, MUTED, SMALL)
 
 
 def label(draw: ImageDraw.ImageDraw, xy: tuple[int, int], value: str, tone: str) -> None:
     x, y = xy
     bounds = draw.textbbox((x, y), value, font=TINY)
-    draw.rounded_rectangle((x - 7, y - 4, bounds[2] + 7, y + 15), radius=3, fill=PAPER, outline="#E0E8F0")
+    draw.rounded_rectangle((x - 6, y - 4, bounds[2] + 6, y + 14), radius=3, fill=PAPER, outline="#E0E8F0")
     text(draw, (x, y), value, tone, TINY)
 
 
@@ -218,64 +235,37 @@ def frame(index: int) -> Image.Image:
     image = Image.new("RGBA", (W, H), PAPER)
     draw = ImageDraw.Draw(image)
     offset = index * 7
-    # Header and legend.
+
     text(draw, (24, 20), "ORPHEUS / LIVE PRODUCTION PATH", INK, H1)
-    text(draw, (24, 56), "Creator input → bounded Part fit → deterministic media work → evidence-backed review", MUTED, BODY)
-    draw.rounded_rectangle((735, 18, 1576, 68), radius=6, fill="#F5F8FB", outline=RULE)
-    text(draw, (754, 34), "Orange = product request · blue dashes = media/job flow · gray dashes = read-only evidence", MUTED, SMALL)
+    text(draw, (24, 56), "One bounded Part becomes a reviewed, deterministic full-film decision.", MUTED, BODY)
+    draw.rounded_rectangle((910, 18, 1576, 70), radius=6, fill=PANEL, outline=RULE)
+    text(draw, (928, 31), "MARCHING DASHES = SERVICE-TO-SERVICE CALLS", INK, TINY)
+    text(draw, (928, 47), "Orange product · blue media · gold model · gray evidence · fixed domain borders", MUTED, SMALL)
 
-    # Trust boundaries.
-    dashed_rectangle(draw, (24, 92, 298, 886), "#5B7591", offset, 2)
-    dashed_rectangle(draw, (322, 92, 1240, 886), "#5B7591", offset, 2)
-    dashed_rectangle(draw, (1262, 92, 1576, 886), "#64748B", offset, 2)
-    text(draw, (38, 111), "CREATOR DEVICE", INK, H2)
-    text(draw, (340, 111), "GOOGLE CLOUD / orpheus-agentic", INK, H2)
-    text(draw, (1280, 111), "EXTERNAL EVIDENCE / PROVIDERS", INK, H2)
+    # Fixed domains are deliberately solid and identical on every frame.
+    draw_google_cloud_boundary(draw)
+    for domain in DOMAINS:
+        draw_domain(draw, domain)
 
-    # Region labels.
-    draw.rounded_rectangle((358, 130, 1198, 150), radius=3, fill=CLOUD)
-    text(draw, (370, 134), "EDGE + ORCHESTRATION", MUTED, TINY)
-    draw.rounded_rectangle((450, 438, 1058, 458), radius=3, fill="#EEF6FF")
-    text(draw, (462, 442), "DETERMINISTIC MEDIA LANE", MUTED, TINY)
-    draw.rounded_rectangle((1082, 438, 1224, 458), radius=3, fill="#F5F8FB")
-    text(draw, (1094, 442), "MCP", MUTED, TINY)
+    # All actual links animate, but only the links between service cards.
+    colors = {"product": ORANGE, "agent": GOLD, "media": MEDIA, "evidence": EVIDENCE}
+    for kind, points, caption in PATHS:
+        marching_path(draw, points, colors[kind], offset)
+        if caption:
+            label(draw, LABEL_POSITIONS[caption], caption, colors[kind])
 
-    # Static cards first, then paths above backgrounds but below labels.
+    # Cards are rendered above service lines so routes terminate cleanly at their owner.
     for card in CARDS:
         draw_card(image, card)
 
-    for kind, points, caption in PATHS:
-        if kind == "product":
-            path(draw, points, ORANGE, width=4)
-        elif kind == "media":
-            path(draw, points, MEDIA, offset=offset, marching=True, width=3)
-        elif kind == "evidence":
-            path(draw, points, EVIDENCE, offset=offset * 2, marching=True, width=3)
-        else:
-            path(draw, points, RED, offset=offset, marching=True, width=2)
-        if caption:
-            mid = points[len(points) // 2]
-            position = LABEL_POSITIONS.get(caption, (mid[0] + 8, mid[1] - 20))
-            label(draw, position, caption, ORANGE if kind == "product" else (MEDIA if kind == "media" else (EVIDENCE if kind == "evidence" else RED)))
+    draw.rounded_rectangle((304, 760, 1150, 824), radius=8, fill=PANEL, outline=RULE)
+    text(draw, (324, 775), "CONFIGURED SUPPORTS", INK, H3)
+    text(draw, (324, 798), "Secret Manager keeps provider and Grafana tokens server-side. Cloud SQL is the configured run-record backend.", MUTED, BODY)
 
-    # Callout markers, intentionally few and ordered by the reading path.
-    markers = [(50, 150, "1"), (370, 140, "2"), (610, 140, "3"), (916, 112, "4"), (484, 448, "5"), (1074, 448, "6"), (1294, 360, "7"), (790, 448, "8"), (610, 690, "9")]
-    for x, y, n in markers:
-        draw.rounded_rectangle((x, y, x + 34, y + 34), radius=6, fill=BLUE)
-        bbox = draw.textbbox((0, 0), n, font=H3)
-        draw.text((x + 17 - (bbox[2] - bbox[0]) / 2, y + 7), n, font=H3, fill=PAPER)
-
-    # Boundary facts are more useful than decorative coverage.
-    draw.rounded_rectangle((49, 690, 272, 828), radius=8, fill="#F5F8FB", outline=RULE)
-    text(draw, (64, 710), "CREATOR CONTROL", INK, H3)
-    line_text(draw, 64, 742, ("Marks the Part", "supplies the take", "approves the artifact"), BODY, MUTED, 19)
-    draw.rounded_rectangle((1282, 688, 1556, 828), radius=8, fill="#F5F8FB", outline=RULE)
-    text(draw, (1298, 708), "EVIDENCE BOUNDARY", INK, H3)
-    line_text(draw, 1298, 740, ("No raw media", "No prompts", "No credentials"), BODY, MUTED, 19)
-
-    draw.rounded_rectangle((24, 910, 1576, 956), radius=6, fill="#F5F8FB", outline=RULE)
-    text(draw, (44, 925), "Verified deployed services: Firebase Hosting · orpheus-api · grafana-mcp · orpheus-worker · GCS media buckets. Dashed cards are configured boundaries; no raw media crosses into Grafana.", MUTED, SMALL)
-    return image.convert("P", palette=Image.Palette.ADAPTIVE, colors=160)
+    draw.rounded_rectangle((24, 862, 1576, 912), radius=6, fill=PANEL, outline=RULE)
+    text(draw, (44, 876), "Verified deployed: Firebase Hosting · orpheus-api · grafana-mcp · orpheus-worker · GCS media buckets. Configured: Vertex/Agent Engine · model provider · Cloud SQL.", MUTED, SMALL)
+    text(draw, (44, 894), "Media remains in the private storage lane; Grafana receives only redacted evidence.", MUTED, SMALL)
+    return image
 
 
 def cell(root: Element, ident: str, value: str, style: str, x: int, y: int, width: int, height: int, vertex: bool = True, source: str | None = None, target: str | None = None) -> None:
@@ -300,53 +290,73 @@ def image_style(name: str) -> str:
 
 
 def write_drawio() -> None:
-    graph = Element("mxGraphModel", {"dx": "1600", "dy": "980", "grid": "1", "gridSize": "10", "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1", "fold": "1", "page": "1", "pageScale": "1", "pageWidth": "1600", "pageHeight": "980", "math": "0", "shadow": "0"})
+    graph = Element("mxGraphModel", {"dx": str(W), "dy": str(H), "grid": "1", "gridSize": "10", "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1", "fold": "1", "page": "1", "pageScale": "1", "pageWidth": str(W), "pageHeight": str(H), "math": "0", "shadow": "0"})
     root = SubElement(graph, "root")
     SubElement(root, "mxCell", {"id": "0"})
     SubElement(root, "mxCell", {"id": "1", "parent": "0"})
-    label_style = "shape=label;html=1;align=left;verticalAlign=middle;fontColor=#203247;fontStyle=1;fontSize=17;"
-    boundary = "rounded=0;html=1;fillColor=none;dashed=1;dashPattern=10 8;strokeWidth=2;strokeColor=#5B7591;"
-    card_style = "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#1689D4;fontColor=#203247;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=18;spacingTop=16;"
-    dashed_card = "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;dashed=1;dashPattern=10 8;strokeWidth=2;strokeColor=#FF5A36;fontColor=#203247;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=18;spacingTop=16;"
-    cell(root, "creator-boundary", "", boundary, 24, 92, 274, 794)
-    cell(root, "cloud-boundary", "", boundary, 322, 92, 918, 794)
-    cell(root, "external-boundary", "", boundary, 1262, 92, 314, 794)
-    cell(root, "title", "ORPHEUS / LIVE PRODUCTION PATH", "shape=label;html=1;fontSize=29;fontStyle=1;fontColor=#203247;align=left;verticalAlign=middle;", 24, 20, 560, 34)
-    cell(root, "sub", "Creator input → bounded Part fit → deterministic media work → evidence-backed review", "shape=label;html=1;fontSize=13;fontColor=#50667D;align=left;verticalAlign=middle;", 24, 56, 690, 22)
-    cell(root, "creator-label", "CREATOR DEVICE", label_style, 38, 110, 210, 25)
-    cell(root, "cloud-label", "GOOGLE CLOUD / orpheus-agentic", label_style, 340, 110, 350, 25)
-    cell(root, "external-label", "EXTERNAL EVIDENCE / PROVIDERS", label_style, 1280, 110, 260, 25)
+    cloud_style = "rounded=1;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#5B7591;"
+    domain_style = "rounded=1;html=1;fillColor=#FBFCFD;strokeWidth=2;strokeColor=#8095AA;"
+    label_style = "shape=label;html=1;align=left;verticalAlign=middle;fontColor=#203247;fontStyle=1;fontSize=16;"
+    note_style = "shape=label;html=1;align=left;verticalAlign=middle;fontColor=#50667D;fontSize=11;"
+    card_style = "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#1689D4;fontColor=#203247;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=16;spacingTop=20;"
+    configured_card = "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#FF5A36;fontColor=#203247;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=16;spacingTop=20;"
+    cell(root, "title", "ORPHEUS / LIVE PRODUCTION PATH", "shape=label;html=1;fontSize=29;fontStyle=1;fontColor=#203247;align=left;verticalAlign=middle;", 24, 20, 600, 34)
+    cell(root, "sub", "One bounded Part becomes a reviewed, deterministic full-film decision.", "shape=label;html=1;fontSize=13;fontColor=#50667D;align=left;verticalAlign=middle;", 24, 56, 700, 22)
+    x1, y1, x2, y2 = GOOGLE_CLOUD_BOUNDARY
+    cell(root, "google-cloud-boundary", "", cloud_style, x1, y1, x2 - x1, y2 - y1)
+    cell(root, "google-cloud-label", "GOOGLE CLOUD / ORPHEUS-AGENTIC", label_style, x1 + 28, y1 + 4, 320, 20)
+    domain_ids: dict[str, str] = {}
+    for index, domain in enumerate(DOMAINS, start=2):
+        ident = f"domain-{domain.key}"
+        domain_ids[domain.key] = ident
+        x1, y1, x2, y2 = domain.box
+        cell(root, ident, "", domain_style, x1, y1, x2 - x1, y2 - y1)
+        cell(root, f"domain-label-{domain.key}", domain.title, label_style, x1 + 32, y1 + 16, x2 - x1 - 48, 20)
+        cell(root, f"domain-note-{domain.key}", domain.note, note_style, x1 + 32, y1 + 36, x2 - x1 - 48, 18)
+
     card_ids: dict[str, str] = {}
-    for index, card in enumerate(CARDS, start=20):
+    for card in CARDS:
         ident = f"card-{card.key}"
         card_ids[card.key] = ident
-        body = "<br>".join((f"<b>{card.title}</b>", *card.body))
-        cell(root, ident, body, dashed_card if card.dashed else card_style, card.x, card.y, card.w, card.h)
+        body = "<br>".join((f"<b>{card.title}</b>", *card.body, f"<font color='#50667D'>{card.state.lower()}</font>"))
+        cell(root, ident, body, configured_card if card.state == "CONFIGURED" else card_style, card.x, card.y, card.w, card.h)
         if card.icon:
-            cell(root, f"icon-{card.key}", "", image_style(card.icon), card.x + 18, card.y + 22, 46, 46)
-    # The Firebase card uses the official service label; core GCP product icons are embedded for the service cards.
-    edge_styles = {
-        "product": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;strokeColor=#FF5A36;",
-        "media": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=12 8;strokeColor=#2F80ED;",
-        "evidence": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=12 8;strokeColor=#64748B;",
-        "secret": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;dashed=1;dashPattern=8 7;strokeColor=#E7645F;",
+            cell(root, f"icon-{card.key}", "", image_style(card.icon), card.x + 14, card.y + 14, 43, 43)
+
+    styles = {
+        "product": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#FF5A36;",
+        "agent": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#D3912A;",
+        "media": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#2F80ED;",
+        "evidence": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#64748B;",
     }
     links = (
-        ("edge-1", "browser", "hosting", "product"), ("edge-2", "hosting", "api", "product"),
-        ("edge-3", "api", "agent", "product"), ("edge-4", "browser", "storage", "media"),
-        ("edge-5", "api", "worker", "media"), ("edge-6", "worker", "storage", "media"),
-        ("edge-7", "api", "mcp", "evidence"), ("edge-8", "mcp", "grafana", "evidence"),
-        ("edge-9", "agent", "provider", "evidence"), ("edge-10", "secret", "api", "secret"),
-        ("edge-11", "secret", "sql", "secret"),
+        ("edge-1", "browser", "hosting", "product"),
+        ("edge-2", "hosting", "api", "product"),
+        ("edge-3", "api", "agent", "product"),
+        ("edge-4", "agent", "provider", "agent"),
+        ("edge-5", "api", "worker", "media"),
+        ("edge-6", "worker", "storage", "media"),
+        ("edge-7", "agent", "mcp", "evidence"),
+        ("edge-8", "mcp", "grafana", "evidence"),
     )
     for ident, source, target, tone in links:
-        cell(root, ident, "", edge_styles[tone], 0, 0, 0, 0, False, card_ids[source], card_ids[target])
+        cell(root, ident, "", styles[tone], 0, 0, 0, 0, False, card_ids[source], card_ids[target])
     xml = tostring(graph, encoding="unicode")
     DRAWIO.write_text(f'<mxfile host="app.diagrams.net" version="26.0.14"><diagram id="orpheus-live-production" name="Live production path">{xml}</diagram></mxfile>\n')
 
 
+def verify_motion() -> None:
+    first, later = frame(0).convert("RGB"), frame(8).convert("RGB")
+    # Every domain border is outside every service route and must stay byte-identical.
+    for border in ((24, 104, 250, 108), (262, 92, 1190, 96), (1202, 104, 1576, 108)):
+        assert ImageChops.difference(first.crop(border), later.crop(border)).getbbox() is None
+    # The service paths must carry the only frame-to-frame animation.
+    assert ImageChops.difference(first, later).getbbox() is not None
+
+
 if __name__ == "__main__":
-    frames = [frame(index) for index in range(FRAMES)]
+    verify_motion()
+    frames = [frame(index).convert("P", palette=Image.Palette.ADAPTIVE, colors=160) for index in range(FRAMES)]
     frames[0].save(OUT, save_all=True, append_images=frames[1:], duration=1000 // FPS, loop=0, disposal=2, optimize=True)
     write_drawio()
     print(OUT)

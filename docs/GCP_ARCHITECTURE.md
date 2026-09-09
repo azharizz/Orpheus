@@ -16,7 +16,7 @@ Firebase Hosting is optional. Choose it for static frontend CDN, SSL, previews, 
 
 ![Animated Orpheus live production path](assets/orpheus-live-production-path.gif)
 
-The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official GCP product icons. Orange lines carry product requests. Animated blue dashes represent media/job flow. Animated gray dashes represent scoped, read-only evidence flow to Grafana. Solid service cards were verified by the read-only deployment check on 2026-09-10; dashed cards are configured boundaries.
+The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official Google Cloud legacy console icons. Marching dashes appear only on service-to-service paths: orange carries product requests, blue media/jobs, gold model calls, and gray scoped read-only evidence to Grafana. Domain borders stay fixed. Cards marked `DEPLOYED` were verified by the read-only deployment check on 2026-09-10; cards marked `CONFIGURED` describe the planned profile.
 
 All application resources should start in one GCP region. Jakarta (`asia-southeast2`) is a reasonable default for an Indonesia-based operator, but the final region must be checked against Agent Engine, Cloud SQL, Firebase rewrite, and Grafana connectivity support.
 

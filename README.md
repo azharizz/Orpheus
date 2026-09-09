@@ -129,7 +129,7 @@ Raw media, prompts, credentials, and free-form provider output do not belong in 
   <img src="docs/assets/orpheus-live-production-path.gif" alt="Animated Orpheus live production path showing Firebase Hosting, Cloud Run API and worker, Vertex AI, Cloud Storage, Grafana MCP, and Grafana Cloud" width="100%">
 </p>
 
-<p align="center"><sub><a href="docs/assets/orpheus-live-production-path.drawio">Open the editable Draw.io source</a> · Orange paths carry product requests; animated blue dashes carry media and jobs; animated gray dashes carry read-only evidence.</sub></p>
+<p align="center"><sub><a href="docs/assets/orpheus-live-production-path.drawio">Open the editable Draw.io source</a> · Marching dashes only connect services: orange product requests, blue media/jobs, gold model calls, and gray read-only evidence. Domain borders are fixed.</sub></p>
 
 | Layer | Responsibility |
 | --- | --- |

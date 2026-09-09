@@ -1,3 +1,6 @@
-# Google Cloud product icons
+# Legacy Google Cloud icons
 
-The Cloud Run, Cloud Storage, Vertex AI, and Cloud SQL icons in this directory come from Google Cloud's official [product icon library](https://cloud.google.com/icons), downloaded on 2026-09-10 for the Orpheus architecture diagram.
+The Cloud Run, Cloud Storage, Cloud SQL, and Vertex AI PNGs in this directory come unchanged from Google Cloud's official **Legacy console icons** ZIP, downloaded on 2026-09-10 for the Orpheus production-path diagram.
+
+- [Google Cloud Icon Library](https://cloud.google.com/icons)
+- [Official legacy icon download](https://services.google.com/fh/files/misc/google-cloud-legacy-icons.zip)
