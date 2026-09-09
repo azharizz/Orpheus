@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
+  <title id="title">Orpheus — Picture, sound, evidence</title>
+  <desc id="desc">A dark cinematic banner with an orange film timeline, a sound waveform, and the Orpheus wordmark.</desc>
+  <defs>
+    <linearGradient id="ember" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#FF5A36"/>
+      <stop offset="1" stop-color="#EAC17C"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="75%" cy="40%" r="55%">
+      <stop offset="0" stop-color="#FF5A36" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#FF5A36" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grain" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="5" r="1" fill="#EFEFE8" opacity=".09"/>
+      <circle cx="19" cy="9" r=".8" fill="#EFEFE8" opacity=".06"/>
+      <circle cx="11" cy="21" r=".7" fill="#EFEFE8" opacity=".08"/>
+      <path d="M0 15h7M17 2h4M21 23h5" stroke="#EFEFE8" stroke-opacity=".04"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="560" fill="#0C0E10"/>
+  <rect width="1600" height="560" fill="url(#halo)"/>
+  <rect width="1600" height="560" fill="url(#grain)"/>
+  <path d="M54 82H214M54 82V136M1546 82H1386M1546 82V136M54 478H214M54 478V424M1546 478H1386M1546 478V424" fill="none" stroke="#718089" stroke-opacity=".7" stroke-width="2"/>
+  <text x="86" y="124" fill="#EFEFE8" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="4">PICTURE · SOUND · EVIDENCE</text>
+  <text x="86" y="329" fill="#EFEFE8" font-family="Arial Narrow, Impact, Helvetica, sans-serif" font-size="166" font-weight="900" letter-spacing="-6">ORPHEUS</text>
+  <rect x="92" y="362" width="92" height="6" fill="url(#ember)"/>
+  <text x="86" y="410" fill="#ABB2B7" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="1">AN AGENTIC FOLEY WORKBENCH</text>
+  <g transform="translate(995 134)">
+    <text x="0" y="0" fill="#EAC17C" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="2">ONE EVENT / WHOLE FILM</text>
+    <line x1="0" y1="55" x2="500" y2="55" stroke="#343B42" stroke-width="3"/>
+    <line x1="0" y1="55" x2="155" y2="55" stroke="#FF5A36" stroke-width="5"/>
+    <g fill="#EAC17C">
+      <rect x="36" y="39" width="8" height="32"/>
+      <rect x="112" y="35" width="8" height="40"/>
+      <rect x="249" y="42" width="8" height="26"/>
+      <rect x="386" y="37" width="8" height="36"/>
+      <rect x="459" y="41" width="8" height="28"/>
+    </g>
+    <g fill="#9DCFAD">
+      <rect x="112" y="35" width="8" height="40"/>
+      <rect x="386" y="37" width="8" height="36"/>
+    </g>
+    <path d="M0 145h28l14-38 17 72 18-102 20 133 19-75 20 34h34l17-24 19 30 20-72 18 92 21-58 17 22h57" fill="none" stroke="url(#ember)" stroke-linecap="square" stroke-linejoin="miter" stroke-width="6"/>
+    <line x1="0" y1="255" x2="500" y2="255" stroke="#343B42" stroke-width="1"/>
+    <text x="0" y="291" fill="#EFEFE8" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700">MARK · FIND · FIT · REVIEW</text>
+  </g>
+  <text x="86" y="505" fill="#718089" font-family="Arial, Helvetica, sans-serif" font-size="15" letter-spacing="2">LOCAL MATCHING · BOUNDED AGENT FITTING · HUMAN APPROVAL</text>
+</svg>
