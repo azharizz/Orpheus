@@ -102,6 +102,12 @@ The visuals below are captured from the product workflow. The long-film screen u
 
 The agent is a coordinator inside a tight boundary. It is useful when a take needs better crop, gain, or timing than the deterministic baseline, but it never becomes the authority for sound-family membership or approval.
 
+<p align="center">
+  <img src="docs/assets/orpheus-agent-fit-loop.gif" alt="Animated Orpheus agent fit loop showing explicit consent, Part validation, deterministic baseline, ADK coordination, local fitting and measurement, Grafana MCP evidence, and human verdict" width="100%">
+</p>
+
+<p align="center"><sub><a href="docs/assets/orpheus-agent-fit-loop.drawio">Open the editable Draw.io source</a> · Marching dashes only connect actors, tools, and evidence services. Domain borders are fixed.</sub></p>
+
 | Agent capability | Product implementation | Creator boundary |
 | --- | --- | --- |
 | Part interpretation | Reads the explicitly selected Part, proposed take, prior evidence, and bounded processing results. | The creator chooses the Part and supplied/recorded take. |
