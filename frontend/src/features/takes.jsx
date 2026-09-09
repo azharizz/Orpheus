@@ -9,9 +9,11 @@ import {
   discard,
 } from "../media/recording.js";
 import { time, matchVolume } from "../state/domain.js";
+import { useExtras, GenerateTake } from "./extras.jsx";
 
 export function Recorder({ p, family, state, transport }) {
   const recording = useRecording();
+  const extras = useExtras();
   const [matched, setMatched] = useState(false);
   const [brief, setBrief] = useState("");
   const [start, setStart] = useState(family.seed_range_s?.[0] || 0);
@@ -156,6 +158,18 @@ export function Recorder({ p, family, state, transport }) {
           }}
         />
       </label>
+      <GenerateTake
+        extras={extras}
+        disabled={locked || !!recording.draft || !state.config}
+        onError={report}
+        onGenerated={(blob) => {
+          try {
+            uploadTake(blob, metadata, state.config.max_audio_bytes, p.seconds);
+          } catch (error) {
+            report(error);
+          }
+        }}
+      />
       {recording.draft && (
         <div className="capture">
           <h3>Captured in this browser</h3>

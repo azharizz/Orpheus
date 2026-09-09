@@ -292,6 +292,22 @@ def public_config():
     }
 
 
+def _extra(handler, route, query=None):
+    try:
+        from . import extras
+
+        if query is None:
+            return extras.handle_post(handler, route)
+        return extras.handle_get(handler, route, query)
+    except RequestError:
+        raise
+    except (ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+        raise
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
 class Handler(LocalHandler):
     def do_HEAD(self):
         self.do_GET()
@@ -364,7 +380,7 @@ class Handler(LocalHandler):
             self.embed_panel(route.removeprefix("/embed/"))
         elif route.startswith("/projects/"):
             self.project_file(route.removeprefix("/projects/"))
-        else:
+        elif not _extra(self, route, parse_qs(parsed.query)):
             raise RequestError("Route not found.", 404)
 
     def embed_panel(self, slug):
@@ -583,6 +599,8 @@ class Handler(LocalHandler):
                     self.upload(route)
                 finally:
                     UPLOAD_LOCK.release()
+                return
+            if _extra(self, route):
                 return
             self.json_action(route)
         except RequestError as error:

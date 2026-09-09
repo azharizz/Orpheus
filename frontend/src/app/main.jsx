@@ -10,6 +10,7 @@ import "../styles/families.css";
 import "../styles/workspace.css";
 import "../styles/movie.css";
 import { PhotographicTitle } from "./photographic-title.jsx";
+import { useExtras, StreamSource, NarrationInput, attachNarration } from "../features/extras.jsx";
 import newProjectBefore from "../assets/new-project-before.webp";
 import newProjectAfter from "../assets/new-project-after.webp";
 
@@ -55,6 +56,8 @@ function SoundTransition() {
 }
 function Import({ config, busy }) {
   const [video, setVideo] = useState(null);
+  const [narration, setNarration] = useState(null);
+  const extras = useExtras();
   async function submit(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -86,6 +89,7 @@ function Import({ config, busy }) {
         headers: { "Content-Type": type },
         body: config.storage === "gcs" ? null : file,
       });
+      await attachNarration(result.project.id, narration).catch(() => null);
       window.location.assign("/workspace?project=" + result.project.id);
     }, "Picture saved. Its sound index is preparing locally.");
   }
@@ -123,6 +127,16 @@ function Import({ config, busy }) {
             placeholder="Soft, close, keep quieter steps"
           />
         </label>
+        <NarrationInput extras={extras} onFile={setNarration} />
+        <StreamSource
+          extras={extras}
+          busy={busy}
+          onError={(error) => update({ error: String(error.message || error) })}
+          onImported={async (project) => {
+            await attachNarration(project.id, narration).catch(() => null);
+            window.location.assign("/workspace?project=" + project.id);
+          }}
+        />
         <p>
           Orpheus preserves the original and indexes its soundtrack on this
           computer. Importing starts no paid inference.
