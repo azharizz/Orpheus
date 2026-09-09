@@ -1,4 +1,4 @@
-"""Render the bounded Orpheus agent-fit loop and editable Draw.io source. Requires Pillow."""
+"""Render the bounded Orpheus agent-turn diagram and editable Draw.io source. Requires Pillow."""
 from __future__ import annotations
 
 from math import atan2, cos, hypot, sin
@@ -10,19 +10,20 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 ROOT = Path(__file__).parent
 OUT = ROOT / "orpheus-agent-fit-loop.gif"
 DRAWIO = ROOT / "orpheus-agent-fit-loop.drawio"
-W, H, FPS, FRAMES = 1600, 940, 8, 28
+W, H, FPS, FRAMES = 1600, 900, 8, 28
 
-INK = "#203247"
-MUTED = "#50667D"
-RULE = "#C9D7E5"
-PAPER = "#FFFFFF"
-PANEL = "#F5F8FB"
+BLACK = "#0C0E10"
+RAISED = "#171A1D"
+ACTIVE = "#252A2F"
+CHALK = "#EFEFE8"
+MUTED = "#ABB2B7"
+RULE = "#343B42"
+EDGE = "#718089"
 ORANGE = "#FF5A36"
-BLUE = "#2F80ED"
-GOLD = "#D3912A"
-EVIDENCE = "#64748B"
-SAGE = "#5FAE7B"
-ROSE = "#E7645F"
+GOLD = "#EAC17C"
+SAGE = "#9DCFAD"
+ROSE = "#FF8790"
+BLUE = "#8AB4F8"
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -37,94 +38,76 @@ def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-H1 = font(29, True)
+TITLE = font(31, True)
+SUBTITLE = font(14)
 H2 = font(16, True)
-H3 = font(14, True)
-BODY = font(13)
-SMALL = font(11)
-TINY = font(10, True)
+H3 = font(13, True)
+BODY = font(12)
+SMALL = font(10, True)
 
 
-class Domain:
-    def __init__(self, box: tuple[int, int, int, int], title: str, note: str, tone: str):
-        self.box, self.title, self.note, self.tone = box, title, note, tone
+class Station:
+    def __init__(self, key: str, x: int, title: str, detail: tuple[str, ...], tone: str, tag: str):
+        self.key, self.x, self.title, self.detail, self.tone, self.tag = key, x, title, detail, tone, tag
 
 
-class Step:
-    def __init__(self, key: str, box: tuple[int, int, int, int], title: str, body: tuple[str, ...], tone: str, tag: str):
-        self.key, self.box, self.title, self.body, self.tone, self.tag = key, box, title, body, tone, tag
-
-
-AGENT_BOUNDARY = (270, 92, 1046, 842)
-DOMAINS = (
-    Domain((24, 104, 246, 842), "CREATOR INPUT", "explicit consent", "#8095AA"),
-    Domain((296, 138, 526, 470), "PART + BASELINE", "fixed starting point", "#76A6D7"),
-    Domain((546, 138, 774, 470), "AGENT SESSION", "bounded paid turn", "#E4A263"),
-    Domain((296, 494, 774, 738), "LOCAL FIT TOOLS", "inside accepted windows", "#76A6D7"),
-    Domain((794, 424, 1022, 738), "SELECTION GATE", "measured only", "#96A3B4"),
-    Domain((1072, 104, 1346, 842), "READ-ONLY EVIDENCE", "Grafana MCP", "#96A3B4"),
-    Domain((1370, 104, 1576, 842), "CREATOR VERDICT", "human only", "#8095AA"),
+SCOPE = (274, 150, 1272, 730)
+STATION_Y = 442
+STATION_W, STATION_H = 130, 118
+STATIONS = (
+    Station("baseline", 310, "BASELINE", ("Deterministic", "same Part"), SAGE, "LOCAL"),
+    Station("history", 465, "HISTORY", ("Grafana MCP", "read-only"), GOLD, "EVIDENCE"),
+    Station("inspect", 620, "INSPECT", ("Frames +", "source audio"), BLUE, "LOCAL"),
+    Station("fit", 775, "FIT", ("Crop · gain", "timing"), ORANGE, "AGENT"),
+    Station("measure", 930, "MEASURE", ("Peak · loudness", "timing"), BLUE, "LOCAL"),
+    Station("verify", 1085, "VERIFY", ("Exact MCP", "evidence"), GOLD, "EVIDENCE"),
 )
-STEPS = (
-    Step("input", (48, 356, 222, 502), "AUTHORIZE FIT", ("Select one Part", "Assign one family take"), ORANGE, "HUMAN"),
-    Step("boundary", (320, 220, 502, 348), "VALIDATE BOUNDARY", ("Confirmed ranges only", "No full-film paid turn"), BLUE, "LOCAL"),
-    Step("baseline", (320, 330, 502, 440), "DETERMINISTIC BASELINE", ("Same take · same Part", "Measured starting point"), SAGE, "LOCAL"),
-    Step("agent", (570, 220, 750, 370), "ADK COORDINATOR", ("Inspect · reason · call tools", "Crop · timing · gain"), GOLD, "OPTIONAL PAID"),
-    Step("inspect", (320, 550, 502, 678), "PART INSPECTION", ("Frames + source audio", "Local Part clock"), BLUE, "TOOL"),
-    Step("fit", (570, 550, 750, 678), "FIT CANDIDATE", ("Use accepted windows", "Render one revision"), ORANGE, "TOOL"),
-    Step("measure", (818, 490, 998, 558), "MEASURE", ("Loudness · peak · timing",), BLUE, "TOOL"),
-    Step("selection", (818, 590, 998, 700), "SELECT OR STOP", ("Needs human review", "or unsuitable"), EVIDENCE, "AGENT RESULT"),
-    Step("mcp", (1096, 260, 1322, 410), "GRAFANA MCP", ("History · failures · runtime", "Scoped read-only evidence"), EVIDENCE, "REQUIRED"),
-    Step("receipt", (1096, 530, 1322, 658), "EXACT CANDIDATE", ("Clipping · timing · export", "Evidence must be nonempty"), EVIDENCE, "REQUIRED"),
-    Step("verdict", (1394, 680, 1552, 824), "AUDITION + VERDICT", ("Compare against picture", "Approve or reject"), ORANGE, "HUMAN"),
-)
-STEP = {step.key: step for step in STEPS}
+STATION = {station.key: station for station in STATIONS}
 
-# Every animated dash goes from one actual actor, tool, or evidence service to another.
+# The first point is the source and the final point is the arrow target.
 PATHS = (
-    ("product", [(222, 429), (270, 429), (270, 284), (320, 284)], "EXPLICIT CONSENT"),
-    ("product", [(502, 284), (570, 284)], "PART + TAKE"),
-    ("baseline", [(411, 348), (411, 330)], "BASELINE"),
-    ("baseline", [(502, 385), (536, 385), (536, 300), (570, 300)], ""),
-    ("tool", [(660, 370), (660, 510), (411, 510), (411, 550)], "INSPECT"),
-    ("evidence", [(750, 294), (1096, 294)], "HISTORY"),
-    ("tool", [(660, 370), (660, 550)], "FIT"),
-    ("tool", [(750, 614), (784, 614), (784, 524), (818, 524)], "CANDIDATE"),
-    ("evidence", [(998, 524), (1048, 524), (1048, 594), (1096, 594)], "CANDIDATE EVIDENCE"),
-    ("evidence", [(1096, 634), (998, 634)], "EVIDENCE OK"),
-    ("product", [(998, 645), (1346, 645), (1346, 752), (1394, 752)], "REVIEWABLE CANDIDATE"),
+    ("creator", [(238, 500), (286, 500), (286, 501), (310, 501)], "CONSENT"),
+    ("baseline", [(440, 501), (465, 501)], ""),
+    ("history", [(595, 501), (620, 501)], ""),
+    ("inspect", [(750, 501), (775, 501)], ""),
+    ("fit", [(905, 501), (930, 501)], ""),
+    ("verify", [(1060, 501), (1085, 501)], ""),
+    ("creator", [(1215, 501), (1330, 501), (1330, 500), (1350, 500)], "HUMAN REVIEW"),
 )
-LABELS = {
-    "EXPLICIT CONSENT": (234, 398),
-    "PART + TAKE": (510, 258),
-    "BASELINE": (421, 353),
-    "INSPECT": (508, 491),
-    "HISTORY": (890, 267),
-    "FIT": (670, 510),
-    "CANDIDATE": (758, 590),
-    "CANDIDATE EVIDENCE": (884, 500),
-    "EVIDENCE OK": (1005, 610),
-    "REVIEWABLE CANDIDATE": (1085, 668),
+PATH_COLORS = {
+    "creator": ORANGE,
+    "baseline": SAGE,
+    "history": GOLD,
+    "inspect": BLUE,
+    "fit": ORANGE,
+    "verify": GOLD,
 }
+LABELS = {"CONSENT": (247, 472), "HUMAN REVIEW": (1223, 472)}
 
 
 def text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], value: str, fill: str, face: ImageFont.ImageFont) -> None:
     draw.text((round(xy[0]), round(xy[1])), value, font=face, fill=fill)
 
 
-def lines(draw: ImageDraw.ImageDraw, x: int, y: int, values: tuple[str, ...], face: ImageFont.ImageFont = BODY, color: str = MUTED, step: int = 17) -> None:
+def lines(draw: ImageDraw.ImageDraw, x: int, y: int, values: tuple[str, ...], fill: str = MUTED, step: int = 17) -> None:
     for index, value in enumerate(values):
-        text(draw, (x, y + index * step), value, color, face)
+        text(draw, (x, y + index * step), value, fill, BODY)
 
 
-def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: str, offset: int, width: int = 3, dash: int = 13, gap: int = 9) -> None:
+def dash_start(offset: int, dash: int, gap: int) -> int:
+    """Return the dash phase measured forward from a path source."""
+    return offset % (dash + gap)
+
+
+def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color: str, offset: int, width: int = 3, dash: int = 14, gap: int = 9) -> None:
+    """Move dashes from start toward end as the offset increases."""
     dx, dy = end[0] - start[0], end[1] - start[1]
     length = hypot(dx, dy)
     if not length:
         return
     ux, uy = dx / length, dy / length
     period = dash + gap
-    position = -(offset % period)
+    position = dash_start(offset, dash, gap)
     while position < length:
         a, b = max(0, position), min(length, position + dash)
         if b > a:
@@ -135,85 +118,96 @@ def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple
 def marching_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: str, offset: int) -> None:
     for first, second in zip(points, points[1:]):
         dashed_segment(draw, first, second, color, offset)
-    before, final = points[-2], points[-1]
-    angle = atan2(final[1] - before[1], final[0] - before[0])
+    before, target = points[-2], points[-1]
+    angle = atan2(target[1] - before[1], target[0] - before[0])
     arrow = [
-        final,
-        (final[0] - 10 * cos(angle - .48), final[1] - 10 * sin(angle - .48)),
-        (final[0] - 10 * cos(angle + .48), final[1] - 10 * sin(angle + .48)),
+        target,
+        (target[0] - 10 * cos(angle - .48), target[1] - 10 * sin(angle - .48)),
+        (target[0] - 10 * cos(angle + .48), target[1] - 10 * sin(angle + .48)),
     ]
     draw.polygon(arrow, fill=color)
 
 
-def draw_domain(draw: ImageDraw.ImageDraw, domain: Domain) -> None:
-    x1, y1, x2, y2 = domain.box
-    draw.rounded_rectangle(domain.box, radius=10, fill="#FBFCFD", outline=domain.tone, width=2)
-    draw.rectangle((x1 + 16, y1 + 16, x1 + 22, y1 + 48), fill=domain.tone)
-    text(draw, (x1 + 32, y1 + 17), domain.title, INK, H2)
-    text(draw, (x1 + 32, y1 + 37), domain.note, MUTED, SMALL)
+def frame_rule(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], color: str = RULE, width: int = 1) -> None:
+    draw.rounded_rectangle(box, radius=8, outline=color, width=width)
 
 
-def draw_agent_boundary(draw: ImageDraw.ImageDraw) -> None:
-    x1, y1, x2, y2 = AGENT_BOUNDARY
-    draw.rounded_rectangle(AGENT_BOUNDARY, radius=12, fill=PAPER, outline="#5B7591", width=2)
-    draw.rounded_rectangle((x1 + 16, y1 - 12, x1 + 298, y1 + 12), radius=3, fill=PAPER)
-    text(draw, (x1 + 28, y1 - 7), "ORPHEUS / ONE SELECTED PART", INK, TINY)
-
-
-def tag(draw: ImageDraw.ImageDraw, x: int, y: int, value: str, tone: str) -> None:
-    width = max(56, len(value) * 6 + 18)
-    draw.rounded_rectangle((x, y, x + width, y + 20), radius=3, fill="#F2F6FA", outline=RULE)
+def pill(draw: ImageDraw.ImageDraw, x: int, y: int, value: str, tone: str) -> None:
+    width = max(52, 16 + len(value) * 6)
+    draw.rounded_rectangle((x, y, x + width, y + 20), radius=3, fill=ACTIVE, outline=RULE)
     draw.ellipse((x + 7, y + 7, x + 13, y + 13), fill=tone)
-    text(draw, (x + 19, y + 5), value, tone, TINY)
+    text(draw, (x + 19, y + 5), value, tone, SMALL)
 
 
-def draw_step(draw: ImageDraw.ImageDraw, step: Step) -> None:
-    x1, y1, x2, y2 = step.box
-    draw.rounded_rectangle(step.box, radius=8, fill=PAPER, outline=step.tone, width=2)
-    text(draw, (x1 + 16, y1 + 19), step.title, INK, H3)
-    tag(draw, x1 + 16, y1 + 53, step.tag, step.tone)
-    lines(draw, x1 + 16, y1 + 83, step.body)
+def draw_station(draw: ImageDraw.ImageDraw, station: Station) -> None:
+    x, y = station.x, STATION_Y
+    draw.rounded_rectangle((x, y, x + STATION_W, y + STATION_H), radius=8, fill=RAISED, outline=station.tone, width=2)
+    draw.rectangle((x + 14, y + 16, x + 18, y + 44), fill=station.tone)
+    text(draw, (x + 29, y + 18), station.title, CHALK, H3)
+    pill(draw, x + 14, y + 54, station.tag, station.tone)
+    lines(draw, x + 14, y + 84, station.detail)
+
+
+def draw_actor(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], title: str, detail: tuple[str, ...]) -> None:
+    x1, y1, x2, y2 = box
+    draw.rounded_rectangle(box, radius=10, fill=RAISED, outline=ORANGE, width=2)
+    text(draw, (x1 + 16, y1 + 20), title, CHALK, H3)
+    pill(draw, x1 + 16, y1 + 52, "HUMAN", ORANGE)
+    lines(draw, x1 + 16, y1 + 84, detail)
 
 
 def label(draw: ImageDraw.ImageDraw, xy: tuple[int, int], value: str, tone: str) -> None:
     x, y = xy
-    bounds = draw.textbbox((x, y), value, font=TINY)
-    draw.rounded_rectangle((x - 6, y - 4, bounds[2] + 6, y + 14), radius=3, fill=PAPER, outline="#E0E8F0")
-    text(draw, (x, y), value, tone, TINY)
+    bounds = draw.textbbox((x, y), value, font=SMALL)
+    draw.rounded_rectangle((x - 6, y - 4, bounds[2] + 6, y + 14), radius=3, fill=BLACK, outline=RULE)
+    text(draw, (x, y), value, tone, SMALL)
 
 
 def frame(index: int) -> Image.Image:
-    image = Image.new("RGBA", (W, H), PAPER)
+    image = Image.new("RGBA", (W, H), BLACK)
     draw = ImageDraw.Draw(image)
     offset = index * 7
 
-    text(draw, (24, 20), "ORPHEUS / HOW THE AGENT FITS ONE PART", INK, H1)
-    text(draw, (24, 56), "A bounded agent improves a real Foley take; it never becomes the editor of the whole film.", MUTED, BODY)
-    draw.rounded_rectangle((908, 18, 1576, 70), radius=6, fill=PANEL, outline=RULE)
-    text(draw, (928, 31), "MARCHING DASHES = AGENT TOOL CALL / RESULT", INK, TINY)
-    text(draw, (928, 47), "Orange creator · blue local tool · gold paid model · gray read-only evidence · fixed domain borders", MUTED, SMALL)
+    text(draw, (48, 36), "ORPHEUS / BOUNDED AGENT TURN", CHALK, TITLE)
+    text(draw, (48, 78), "One confirmed Part becomes one reviewable candidate. The agent never approves it.", MUTED, SUBTITLE)
+    frame_rule(draw, (1075, 30, 1552, 84), RULE)
+    text(draw, (1095, 45), "DASHES MOVE WITH THE ARROW", CHALK, SMALL)
+    text(draw, (1095, 62), "static lines define the safe Part scope", MUTED, BODY)
 
-    # Solid domains are a stable map, never an animation target.
-    draw_agent_boundary(draw)
-    for domain in DOMAINS:
-        draw_domain(draw, domain)
+    # This is a fixed frame, not an animated border.
+    frame_rule(draw, SCOPE, EDGE, 2)
+    draw.rectangle((SCOPE[0] + 20, SCOPE[1] - 12, SCOPE[0] + 276, SCOPE[1] + 12), fill=BLACK)
+    text(draw, (SCOPE[0] + 34, SCOPE[1] - 7), "ONE CONFIRMED PART / 05–60 S", CHALK, SMALL)
 
-    colors = {"product": ORANGE, "baseline": SAGE, "tool": BLUE, "evidence": EVIDENCE}
+    draw_actor(draw, (48, 420, 238, 580), "CREATOR SETUP", ("Confirm Part", "Assign family take", "Allow paid fit"))
+    draw_actor(draw, (1350, 420, 1552, 580), "CREATOR VERDICT", ("Audition candidate", "Approve or reject"))
+
+    draw.rounded_rectangle((470, 226, 1080, 368), radius=12, fill=RAISED, outline=ORANGE, width=2)
+    text(draw, (496, 253), "ADK COORDINATOR", ORANGE, H2)
+    text(draw, (496, 282), "Directs only the shown tools inside this Part.", CHALK, BODY)
+    text(draw, (496, 306), "Its allowed adjustment: crop · gain · timing.", MUTED, BODY)
+    pill(draw, 914, 250, "OPTIONAL PAID", GOLD)
+    pill(draw, 914, 284, "NO SELF-APPROVAL", ROSE)
+
+    # Static spokes explain agency; they never animate.
+    for station in STATIONS[1:5]:
+        center = station.x + STATION_W // 2
+        draw.line((center, 368, center, STATION_Y - 8), fill=RULE, width=1)
+    for station in STATIONS:
+        draw_station(draw, station)
+
     for kind, points, caption in PATHS:
-        marching_path(draw, points, colors[kind], offset)
+        marching_path(draw, points, PATH_COLORS[kind], offset)
         if caption:
-            label(draw, LABELS[caption], caption, colors[kind])
+            label(draw, LABELS[caption], caption, PATH_COLORS[kind])
 
-    for step in STEPS:
-        draw_step(draw, step)
+    draw.rounded_rectangle((310, 636, 1215, 684), radius=8, fill=ACTIVE, outline=RULE)
+    text(draw, (332, 651), "STOP IF EVIDENCE IS EMPTY OR THE CANDIDATE IS UNSUITABLE.", CHALK, H3)
+    text(draw, (332, 669), "A passing measurement is only a handoff to the human reviewer.", MUTED, BODY)
 
-    draw.rounded_rectangle((48, 760, 998, 824), radius=8, fill=PANEL, outline=RULE)
-    text(draw, (68, 775), "HARD BOUNDARY", INK, H3)
-    text(draw, (68, 798), "The agent cannot add family events, extend an accepted range, render the full movie as a paid turn, or approve its own candidate.", MUTED, BODY)
-
-    draw.rounded_rectangle((24, 862, 1576, 912), radius=6, fill=PANEL, outline=RULE)
-    text(draw, (44, 876), "A missing or empty Grafana receipt stops selection. A passing measurement makes a candidate reviewable; it is never an approval.", MUTED, SMALL)
-    text(draw, (44, 894), "After a human approval, the separate local matcher may search the full movie. That later step is deterministic, reviewable, and not a paid-agent run.", MUTED, SMALL)
+    draw.rounded_rectangle((48, 782, 1552, 846), radius=8, fill=RAISED, outline=RULE)
+    text(draw, (70, 797), "HARD LIMIT", CHALK, H3)
+    text(draw, (70, 819), "No new family events · no range extension · no paid full-film edit · no automatic approval.", MUTED, BODY)
     return image
 
 
@@ -234,63 +228,66 @@ def cell(root: Element, ident: str, value: str, style: str, x: int, y: int, widt
 
 
 def write_drawio() -> None:
-    graph = Element("mxGraphModel", {"dx": str(W), "dy": str(H), "grid": "1", "gridSize": "10", "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1", "fold": "1", "page": "1", "pageScale": "1", "pageWidth": str(W), "pageHeight": str(H), "math": "0", "shadow": "0"})
+    graph = Element("mxGraphModel", {"dx": str(W), "dy": str(H), "grid": "1", "gridSize": "10", "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1", "fold": "1", "page": "1", "pageScale": "1", "pageWidth": str(W), "pageHeight": str(H), "math": "0", "shadow": "0", "background": BLACK})
     root = SubElement(graph, "root")
     SubElement(root, "mxCell", {"id": "0"})
     SubElement(root, "mxCell", {"id": "1", "parent": "0"})
-    boundary_style = "rounded=1;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#5B7591;"
-    domain_style = "rounded=1;html=1;fillColor=#FBFCFD;strokeWidth=2;strokeColor=#8095AA;"
-    label_style = "shape=label;html=1;align=left;verticalAlign=middle;fontColor=#203247;fontStyle=1;fontSize=16;"
-    note_style = "shape=label;html=1;align=left;verticalAlign=middle;fontColor=#50667D;fontSize=11;"
-    card_style = "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeWidth=2;strokeColor=#2F80ED;fontColor=#203247;fontStyle=1;fontSize=14;align=left;verticalAlign=top;spacingLeft=16;spacingTop=18;"
-    cell(root, "title", "ORPHEUS / HOW THE AGENT FITS ONE PART", "shape=label;html=1;fontSize=29;fontStyle=1;fontColor=#203247;align=left;verticalAlign=middle;", 24, 20, 700, 34)
-    cell(root, "sub", "A bounded agent improves a real Foley take; it never becomes the editor of the whole film.", "shape=label;html=1;fontSize=13;fontColor=#50667D;align=left;verticalAlign=middle;", 24, 56, 800, 22)
-    x1, y1, x2, y2 = AGENT_BOUNDARY
-    cell(root, "agent-boundary", "", boundary_style, x1, y1, x2 - x1, y2 - y1)
-    cell(root, "agent-boundary-label", "ORPHEUS / ONE SELECTED PART", label_style, x1 + 28, y1 + 4, 320, 20)
-    for index, domain in enumerate(DOMAINS, start=10):
-        x1, y1, x2, y2 = domain.box
-        cell(root, f"domain-{index}", "", domain_style, x1, y1, x2 - x1, y2 - y1)
-        cell(root, f"domain-label-{index}", domain.title, label_style, x1 + 32, y1 + 16, x2 - x1 - 48, 20)
-        cell(root, f"domain-note-{index}", domain.note, note_style, x1 + 32, y1 + 36, x2 - x1 - 48, 18)
+    cell(root, "background", "", f"rounded=0;html=1;fillColor={BLACK};strokeColor=none;", 0, 0, W, H)
+    label_style = f"shape=label;html=1;align=left;verticalAlign=middle;fontColor={CHALK};fontStyle=1;fontSize=16;"
+    note_style = f"shape=label;html=1;align=left;verticalAlign=middle;fontColor={MUTED};fontSize=12;"
+    scope_style = f"rounded=1;html=1;fillColor=none;strokeWidth=2;strokeColor={EDGE};"
+    station_style = f"rounded=1;whiteSpace=wrap;html=1;fillColor={RAISED};strokeWidth=2;strokeColor={BLUE};fontColor={CHALK};fontStyle=1;fontSize=13;align=left;verticalAlign=top;spacingLeft=14;spacingTop=18;"
+    actor_style = f"rounded=1;whiteSpace=wrap;html=1;fillColor={RAISED};strokeWidth=2;strokeColor={ORANGE};fontColor={CHALK};fontStyle=1;fontSize=13;align=left;verticalAlign=top;spacingLeft=16;spacingTop=18;"
+    agent_style = f"rounded=1;whiteSpace=wrap;html=1;fillColor={RAISED};strokeWidth=2;strokeColor={ORANGE};fontColor={CHALK};fontStyle=1;fontSize=16;align=left;verticalAlign=top;spacingLeft=26;spacingTop=24;"
+    cell(root, "title", "ORPHEUS / BOUNDED AGENT TURN", f"shape=label;html=1;fontSize=31;fontStyle=1;fontColor={CHALK};align=left;verticalAlign=middle;", 48, 36, 650, 34)
+    cell(root, "subtitle", "One confirmed Part becomes one reviewable candidate. The agent never approves it.", note_style, 48, 78, 800, 22)
+    x1, y1, x2, y2 = SCOPE
+    cell(root, "scope", "", scope_style, x1, y1, x2 - x1, y2 - y1)
+    cell(root, "scope-label", "ONE CONFIRMED PART / 05–60 S", label_style, x1 + 34, y1 + 3, 300, 20)
+    cell(root, "creator-setup", "<b>CREATOR SETUP</b><br>Confirm Part<br>Assign family take<br>Allow paid fit", actor_style, 48, 420, 190, 160)
+    cell(root, "agent", "<b>ADK COORDINATOR</b><br>Directs only the shown tools inside this Part.<br>Crop · gain · timing", agent_style, 470, 226, 610, 142)
+    cell(root, "creator-verdict", "<b>CREATOR VERDICT</b><br>Audition candidate<br>Approve or reject", actor_style, 1350, 420, 202, 160)
 
-    step_ids: dict[str, str] = {}
-    for index, step in enumerate(STEPS, start=30):
-        ident = f"step-{step.key}"
-        step_ids[step.key] = ident
-        x1, y1, x2, y2 = step.box
-        body = "<br>".join((f"<b>{step.title}</b>", *step.body, f"<font color='#50667D'>{step.tag.lower()}</font>"))
-        cell(root, ident, body, card_style.replace("#2F80ED", step.tone), x1, y1, x2 - x1, y2 - y1)
+    ids: dict[str, str] = {}
+    for index, station in enumerate(STATIONS, start=20):
+        ident = f"station-{station.key}"
+        ids[station.key] = ident
+        style = station_style.replace(BLUE, station.tone)
+        value = "<br>".join((f"<b>{station.title}</b>", *station.detail, f"<font color='{MUTED}'>{station.tag.lower()}</font>"))
+        cell(root, ident, value, style, station.x, STATION_Y, STATION_W, STATION_H)
 
-    styles = {
-        "product": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#FF5A36;",
-        "baseline": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#5FAE7B;",
-        "tool": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#2F80ED;",
-        "evidence": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#64748B;",
+    edge_styles = {
+        "creator": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={ORANGE};",
+        "baseline": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={SAGE};",
+        "history": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={GOLD};",
+        "inspect": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={BLUE};",
+        "fit": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={ORANGE};",
+        "verify": f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=14 9;strokeColor={GOLD};",
     }
     links = (
-        ("edge-1", "input", "boundary", "product"),
-        ("edge-2", "boundary", "agent", "product"),
-        ("edge-3", "boundary", "baseline", "baseline"),
-        ("edge-4", "agent", "inspect", "tool"),
-        ("edge-5", "agent", "mcp", "evidence"),
-        ("edge-6", "agent", "fit", "tool"),
-        ("edge-7", "fit", "measure", "tool"),
-        ("edge-8", "measure", "receipt", "evidence"),
-        ("edge-9", "receipt", "selection", "evidence"),
-        ("edge-10", "selection", "verdict", "product"),
+        ("edge-1", "creator-setup", "baseline", "creator"),
+        ("edge-2", "baseline", "history", "baseline"),
+        ("edge-3", "history", "inspect", "history"),
+        ("edge-4", "inspect", "fit", "inspect"),
+        ("edge-5", "fit", "measure", "fit"),
+        ("edge-6", "measure", "verify", "verify"),
+        ("edge-7", "verify", "creator-verdict", "creator"),
     )
     for ident, source, target, tone in links:
-        cell(root, ident, "", styles[tone], 0, 0, 0, 0, False, step_ids[source], step_ids[target])
+        source_id = ids.get(source, source)
+        target_id = ids.get(target, target)
+        cell(root, ident, "", edge_styles[tone], 0, 0, 0, 0, False, source_id, target_id)
     xml = tostring(graph, encoding="unicode")
-    DRAWIO.write_text(f'<mxfile host="app.diagrams.net" version="26.0.14"><diagram id="orpheus-agent-fit-loop" name="Agent fit loop">{xml}</diagram></mxfile>\n')
+    DRAWIO.write_text(f'<mxfile host="app.diagrams.net" version="26.0.14"><diagram id="orpheus-agent-turn" name="Bounded agent turn">{xml}</diagram></mxfile>\n')
 
 
 def verify_motion() -> None:
     first, later = frame(0).convert("RGB"), frame(8).convert("RGB")
-    borders = ((24, 104, 246, 108), (270, 92, 1046, 96), (1370, 104, 1576, 108))
-    assert all(ImageChops.difference(first.crop(border), later.crop(border)).getbbox() is None for border in borders)
+    static = (SCOPE[0], SCOPE[1], SCOPE[2], SCOPE[1] + 4)
+    assert ImageChops.difference(first.crop(static), later.crop(static)).getbbox() is None
     assert ImageChops.difference(first, later).getbbox() is not None
+    # A later frame starts each dash farther from the source, toward its arrow target.
+    assert dash_start(7, 14, 9) > dash_start(0, 14, 9)
 
 
 if __name__ == "__main__":
