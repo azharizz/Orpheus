@@ -12,6 +12,7 @@ ROOT = Path(__file__).parent
 OUT = ROOT / "orpheus-live-production-path.gif"
 DRAWIO = ROOT / "orpheus-live-production-path.drawio"
 ICONS = ROOT / "gcp-icons"
+LOGOS = ROOT / "vendor-logos"
 W, H, FPS, FRAMES = 1600, 940, 8, 28
 
 INK = "#203247"
@@ -77,9 +78,9 @@ GOOGLE_CLOUD_BOUNDARY = (262, 92, 1190, 842)
 DOMAINS = (
     Domain("creator", (24, 104, 250, 842), "CREATOR", "browser control", "#8095AA"),
     Domain("delivery", (278, 104, 742, 386), "DELIVERY", "entry and API", "#76A6D7"),
-    Domain("coordination", (764, 104, 1178, 386), "AGENT COORDINATION", "Part-scoped fit", "#E4A263"),
+    Domain("runtime", (764, 104, 1178, 474), "AGENT PLATFORM", "Runtime, state, preferences", "#E4A263"),
     Domain("media", (278, 410, 742, 730), "MEDIA PIPELINE", "deterministic work", "#76A6D7"),
-    Domain("evidence", (764, 410, 1178, 730), "EVIDENCE PLANE", "read-only history", "#96A3B4"),
+    Domain("evidence", (764, 498, 1178, 730), "EVIDENCE PLANE", "read-only history", "#96A3B4"),
     Domain("external", (1202, 104, 1576, 842), "EXTERNAL ENDPOINTS", "no raw media", "#8A98A9"),
 )
 
@@ -87,37 +88,42 @@ CARDS = (
     Card("browser", 48, 400, 178, 142, "ORPHEUS WORKSPACE", ("Creator marks a Part", "and reviews results"), None, BLUE),
     Card("hosting", 310, 220, 178, 130, "FIREBASE HOSTING", ("Static web delivery", "Landing + workspace"), None, "#F9A825"),
     Card("api", 526, 220, 180, 130, "ORPHEUS API", ("Cloud Run service", "Runs + signed URLs"), "cloud-run", BLUE),
-    Card("agent", 800, 220, 342, 130, "AGENT COORDINATOR", ("Vertex AI / Agent Engine", "Bounded Part fit"), "vertex-ai", ORANGE, "CONFIGURED"),
+    Card("runtime", 808, 184, 326, 132, "AGENT RUNTIME", ("ADK coordinator", "Bounded Part turn"), "vertex-ai", ORANGE, "CONFIGURED"),
+    Card("sessions", 790, 342, 168, 118, "AGENT SESSIONS", ("Run + turn history",), None, GOLD, "CONFIGURED"),
+    Card("memory", 974, 342, 168, 118, "MEMORY BANK", ("Durable preferences",), None, GOLD, "OPT-IN"),
     Card("worker", 310, 510, 178, 140, "ORPHEUS WORKER", ("Cloud Run Job", "FFmpeg + NumPy"), "cloud-run", MEDIA),
     Card("storage", 526, 510, 180, 140, "MEDIA ARTIFACTS", ("Cloud Storage", "Source · takes · exports"), "cloud-storage", SAGE),
-    Card("mcp", 800, 510, 210, 140, "GRAFANA MCP", ("Cloud Run service", "Scoped read-only tools"), "cloud-run", EVIDENCE),
-    Card("provider", 1236, 220, 300, 130, "MODEL PROVIDER", ("Gemini hosted profile", "OpenRouter local test"), "vertex-ai", ORANGE, "CONFIGURED"),
-    Card("grafana", 1236, 510, 300, 140, "GRAFANA CLOUD", ("Loki · Prometheus · Tempo", "Evidence, not media"), None, "#F46800"),
+    Card("mcp", 840, 548, 220, 130, "GRAFANA MCP", ("Cloud Run service", "Scoped read-only tools"), "cloud-run", EVIDENCE),
+    Card("provider", 1236, 184, 300, 132, "MODEL PROVIDER", ("Gemini hosted profile", "OpenRouter local test"), "vertex-ai", ORANGE, "CONFIGURED"),
+    Card("grafana", 1236, 548, 300, 140, "GRAFANA CLOUD", ("Loki · Prometheus · Tempo", "Evidence, not media"), "grafana-icon", "#F46800"),
 )
 CARD = {card.key: card for card in CARDS}
 
 # Each animated path terminates at a service. Domains, cards, and dividers never march.
 PATHS = (
-    ("product", [(226, 471), (268, 471), (268, 285), (310, 285)], "OPEN WORKSPACE"),
+    ("product", [(226, 471), (268, 471), (268, 285), (310, 285)], ""),
     ("product", [(488, 285), (526, 285)], ""),
-    ("product", [(706, 285), (800, 285)], "PART REQUEST"),
-    ("agent", [(1142, 285), (1236, 285)], "MODEL TURN"),
+    ("product", [(706, 285), (808, 285)], "PART REQUEST"),
+    ("agent", [(1134, 248), (1236, 248)], "MODEL TURN"),
+    ("agent", [(880, 316), (880, 328), (874, 328), (874, 342)], "SESSION STATE"),
+    ("agent", [(1054, 316), (1054, 342)], "PREFERENCE READ / WRITE"),
     ("media", [(616, 350), (616, 450), (399, 450), (399, 510)], "START JOB"),
     ("media", [(488, 580), (526, 580)], "WRITE ARTIFACT"),
-    ("evidence", [(971, 350), (971, 510)], "HISTORY QUERY"),
-    ("evidence", [(1010, 580), (1236, 580)], "READ-ONLY EVIDENCE"),
+    ("evidence", [(1134, 285), (1158, 285), (1158, 520), (950, 520), (950, 548)], "HISTORY QUERY"),
+    ("evidence", [(1060, 613), (1236, 613)], "READ-ONLY EVIDENCE"),
 )
 
 
 # The visible caption positions keep labels clear of every service card.
 LABEL_POSITIONS = {
-    "OPEN WORKSPACE": (237, 435),
     "PART REQUEST": (714, 259),
-    "MODEL TURN": (1153, 259),
+    "MODEL TURN": (1146, 222),
+    "SESSION STATE": (782, 318),
+    "PREFERENCE READ / WRITE": (973, 318),
     "START JOB": (497, 421),
     "WRITE ARTIFACT": (491, 555),
-    "HISTORY QUERY": (978, 420),
-    "READ-ONLY EVIDENCE": (1045, 555),
+    "HISTORY QUERY": (1036, 482),
+    "READ-ONLY EVIDENCE": (1082, 588),
 }
 
 
@@ -137,7 +143,7 @@ def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple
         return
     ux, uy = dx / length, dy / length
     period = dash + gap
-    position = -(offset % period)
+    position = offset % period
     while position < length:
         a, b = max(0, position), min(length, position + dash)
         if b > a:
@@ -158,8 +164,12 @@ def marching_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], colo
     draw.polygon(arrow, fill=color)
 
 
+def asset_path(name: str) -> Path:
+    return (LOGOS if name == "grafana-icon" else ICONS) / f"{name}.png"
+
+
 def icon(name: str, size: int) -> Image.Image:
-    image = Image.open(ICONS / f"{name}.png").convert("RGBA")
+    image = Image.open(asset_path(name)).convert("RGBA")
     image.thumbnail((size, size), Image.Resampling.LANCZOS)
     return image
 
@@ -173,19 +183,9 @@ def draw_browser(base: Image.Image, x: int, y: int) -> None:
     draw.line((x + 16, y + 48, x + 34, y + 48), fill=BLUE, width=2)
 
 
-def draw_grafana(base: Image.Image, x: int, y: int) -> None:
-    draw = ImageDraw.Draw(base)
-    for i in range(10):
-        angle = i * (6.28318530718 / 10)
-        cx, cy = x + 26 + cos(angle) * 21, y + 26 + sin(angle) * 21
-        draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill="#F46800")
-    draw.ellipse((x + 13, y + 13, x + 39, y + 39), fill="#F46800")
-    draw.ellipse((x + 20, y + 20, x + 32, y + 32), fill=PAPER)
-
-
 def status_badge(draw: ImageDraw.ImageDraw, x: int, y: int, value: str, tone: str) -> None:
-    width = 72 if value == "DEPLOYED" else 84
-    draw.rounded_rectangle((x, y, x + width, y + 20), radius=3, fill="#F2F6FA", outline=RULE)
+    text_width = draw.textbbox((0, 0), value, font=TINY)[2]
+    draw.rounded_rectangle((x, y, x + text_width + 28, y + 20), radius=3, fill="#F2F6FA", outline=RULE)
     draw.ellipse((x + 7, y + 7, x + 13, y + 13), fill=tone)
     text(draw, (x + 19, y + 5), value, tone, TINY)
 
@@ -200,9 +200,6 @@ def draw_card(base: Image.Image, card: Card) -> None:
         title_x = icon_x + 54
     elif card.key == "browser":
         draw_browser(base, icon_x, card.y + 18)
-        title_x = icon_x + 62
-    elif card.key == "grafana":
-        draw_grafana(base, icon_x, card.y + 18)
         title_x = icon_x + 62
     text(draw, (title_x, card.y + 23), card.title, INK, H3)
     status_badge(draw, card.x + 16, card.y + 73, card.state, card.tone)
@@ -260,10 +257,10 @@ def frame(index: int) -> Image.Image:
 
     draw.rounded_rectangle((304, 760, 1150, 824), radius=8, fill=PANEL, outline=RULE)
     text(draw, (324, 775), "CONFIGURED SUPPORTS", INK, H3)
-    text(draw, (324, 798), "Secret Manager keeps provider and Grafana tokens server-side. Cloud SQL is the configured run-record backend.", MUTED, BODY)
+    text(draw, (324, 798), "Secret Manager keeps tokens server-side. Cloud SQL owns product/run records. Memory Bank stays explicit and opt-in.", MUTED, BODY)
 
     draw.rounded_rectangle((24, 862, 1576, 912), radius=6, fill=PANEL, outline=RULE)
-    text(draw, (44, 876), "Verified deployed: Firebase Hosting · orpheus-api · grafana-mcp · orpheus-worker · GCS media buckets. Configured: Vertex/Agent Engine · model provider · Cloud SQL.", MUTED, SMALL)
+    text(draw, (44, 876), "Verified deployed: Firebase Hosting · orpheus-api · grafana-mcp · orpheus-worker · GCS media buckets. Configured: Agent Runtime + Sessions · Memory Bank opt-in · model provider · Cloud SQL.", MUTED, SMALL)
     text(draw, (44, 894), "Media remains in the private storage lane; Grafana receives only redacted evidence.", MUTED, SMALL)
     return image
 
@@ -285,7 +282,7 @@ def cell(root: Element, ident: str, value: str, style: str, x: int, y: int, widt
 
 
 def image_style(name: str) -> str:
-    data = b64encode((ICONS / f"{name}.png").read_bytes()).decode()
+    data = b64encode(asset_path(name).read_bytes()).decode()
     return f"shape=image;html=1;aspect=fixed;imageAspect=0;image=data:image/png;base64,{data};"
 
 
@@ -319,7 +316,7 @@ def write_drawio() -> None:
         ident = f"card-{card.key}"
         card_ids[card.key] = ident
         body = "<br>".join((f"<b>{card.title}</b>", *card.body, f"<font color='#50667D'>{card.state.lower()}</font>"))
-        cell(root, ident, body, configured_card if card.state == "CONFIGURED" else card_style, card.x, card.y, card.w, card.h)
+        cell(root, ident, body, configured_card if card.state != "DEPLOYED" else card_style, card.x, card.y, card.w, card.h)
         if card.icon:
             cell(root, f"icon-{card.key}", "", image_style(card.icon), card.x + 14, card.y + 14, 43, 43)
 
@@ -332,12 +329,14 @@ def write_drawio() -> None:
     links = (
         ("edge-1", "browser", "hosting", "product"),
         ("edge-2", "hosting", "api", "product"),
-        ("edge-3", "api", "agent", "product"),
-        ("edge-4", "agent", "provider", "agent"),
-        ("edge-5", "api", "worker", "media"),
-        ("edge-6", "worker", "storage", "media"),
-        ("edge-7", "agent", "mcp", "evidence"),
-        ("edge-8", "mcp", "grafana", "evidence"),
+        ("edge-3", "api", "runtime", "product"),
+        ("edge-4", "runtime", "provider", "agent"),
+        ("edge-5", "runtime", "sessions", "agent"),
+        ("edge-6", "runtime", "memory", "agent"),
+        ("edge-7", "api", "worker", "media"),
+        ("edge-8", "worker", "storage", "media"),
+        ("edge-9", "runtime", "mcp", "evidence"),
+        ("edge-10", "mcp", "grafana", "evidence"),
     )
     for ident, source, target, tone in links:
         cell(root, ident, "", styles[tone], 0, 0, 0, 0, False, card_ids[source], card_ids[target])
@@ -352,6 +351,12 @@ def verify_motion() -> None:
         assert ImageChops.difference(first.crop(border), later.crop(border)).getbbox() is None
     # The service paths must carry the only frame-to-frame animation.
     assert ImageChops.difference(first, later).getbbox() is not None
+    # On the horizontal Firebase Hosting → API lane, packets move toward the arrow.
+    def x_center(image: Image.Image) -> float:
+        crop = image.crop((489, 282, 516, 288)).convert("RGB")
+        xs = [x for y in range(crop.height) for x in range(crop.width) if crop.getpixel((x, y)) == (255, 90, 54)]
+        return sum(xs) / len(xs)
+    assert x_center(later) > x_center(first)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ Firebase Hosting is optional. Choose it for static frontend CDN, SSL, previews, 
 
 ![Animated Orpheus live production path](assets/orpheus-live-production-path.gif)
 
-The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official Google Cloud legacy console icons. Marching dashes appear only on service-to-service paths: orange carries product requests, blue media/jobs, gold model calls, and gray scoped read-only evidence to Grafana. Domain borders stay fixed. Cards marked `DEPLOYED` were verified by the read-only deployment check on 2026-09-10; cards marked `CONFIGURED` describe the planned profile.
+The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official Google Cloud legacy console icons and Grafana’s official icon. Marching dashes appear only on service-to-service paths: orange carries product requests, blue media/jobs, gold Agent Runtime/Session/Memory Bank calls, and gray scoped read-only evidence to Grafana. Domain borders stay fixed. The Agent Platform domain separates ADK Runtime, Agent Sessions, and the opt-in Memory Bank. Cards marked `DEPLOYED` were verified by the read-only deployment check on 2026-09-10; cards marked `CONFIGURED` describe the planned profile.
 
 All application resources should start in one GCP region. Jakarta (`asia-southeast2`) is a reasonable default for an Indonesia-based operator, but the final region must be checked against Agent Engine, Cloud SQL, Firebase rewrite, and Grafana connectivity support.
 
