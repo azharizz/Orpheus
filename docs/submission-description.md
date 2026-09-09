@@ -84,18 +84,11 @@ Raw film media, prompts, credentials, and raw provider responses are excluded fr
 
 ## How we built it
 
-```mermaid
-flowchart TD
-  Browser[React workbench] --> API[Orpheus API]
-  API --> Media[FFmpeg + NumPy media workflow]
-  API --> Agent[Google ADK coordinator]
-  Agent --> MCP[Read-only Grafana MCP]
-  MCP --> Grafana[Grafana evidence]
-  Media --> Index[Compact acoustic index]
-  Index --> Queue[Full-film family queue]
-  Queue --> Review[Human review]
-  Review --> Render[Selective export]
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/azharizz/Orpheus/main/docs/assets/orpheus-live-production-path.gif" alt="Animated Orpheus live production path: Firebase Hosting, Cloud Run API and worker, Vertex AI, Cloud Storage, Grafana MCP, and Grafana Cloud" width="100%">
+</p>
+
+<p align="center"><sub><a href="https://github.com/azharizz/Orpheus/blob/main/docs/assets/orpheus-live-production-path.drawio">Editable Draw.io source</a> · Orange requests · animated blue media/job paths · animated gray read-only evidence paths.</sub></p>
 
 | Technology | Role in Orpheus |
 | --- | --- |

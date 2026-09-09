@@ -1,6 +1,6 @@
 # Orpheus GCP architecture
 
-Status: future deployment design. The current shipped baseline remains a local, single-user application. This document describes the GCP shape without claiming that the cloud migration is complete.
+Status: hybrid deployed slice. Firebase Hosting, `orpheus-api`, `grafana-mcp`, `orpheus-worker`, Artifact Registry, and the media/runtime-staging buckets are deployed in `orpheus-agentic`. The diagram distinguishes those verified services from configured boundaries such as Vertex/Agent Engine and Cloud SQL; this document describes the full intended GCP shape without claiming every configured dependency is independently active.
 
 The design preserves the product contract in [`PRODUCT.md`](../PRODUCT.md): deterministic media processing, stateful ADK decisions, explicit paid work, human approval, redacted telemetry, and Grafana as an evidence plane.
 
@@ -14,28 +14,9 @@ Firebase Hosting is optional. Choose it for static frontend CDN, SSL, previews, 
 
 ## Logical layout
 
-```mermaid
-flowchart TD
-  Browser["Landing + Workspace"] --> Frontend["Firebase Hosting optional"]
-  Frontend --> API["Cloud Run: orpheus-api"]
+![Animated Orpheus live production path](assets/orpheus-live-production-path.gif)
 
-  API --> SQL["Cloud SQL PostgreSQL"]
-  API --> GCS["Cloud Storage"]
-  API --> Runtime["Agent Engine Runtime"]
-
-  Runtime --> Sessions["Agent Engine Sessions"]
-  Runtime --> Memory["Memory Bank selective"]
-  Runtime --> MediaAPI["Authenticated media orchestrator"]
-  MediaAPI --> Job["Cloud Run Job: orpheus-media"]
-  Job --> GCS
-  Job --> SQL
-
-  Runtime --> MCP["Cloud Run: grafana-mcp"]
-  API --> OTel["OpenTelemetry"]
-  Runtime --> OTel
-  Job --> OTel
-  OTel --> Grafana["Grafana Cloud"]
-```
+The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official GCP product icons. Orange lines carry product requests. Animated blue dashes represent media/job flow. Animated gray dashes represent scoped, read-only evidence flow to Grafana. Solid service cards were verified by the read-only deployment check on 2026-09-10; dashed cards are configured boundaries.
 
 All application resources should start in one GCP region. Jakarta (`asia-southeast2`) is a reasonable default for an Indonesia-based operator, but the final region must be checked against Agent Engine, Cloud SQL, Firebase rewrite, and Grafana connectivity support.
 

@@ -125,20 +125,11 @@ Raw media, prompts, credentials, and free-form provider output do not belong in 
 
 ## How the system is built
 
-```mermaid
-flowchart LR
-  Creator[Creator] --> Workspace[Orpheus workspace]
-  Workspace --> Part[Confirmed Part]
-  Part --> Local[Local sound-family index]
-  Part --> Agent[Bounded ADK coordinator]
-  Agent --> MCP[Read-only Grafana MCP]
-  Agent --> Candidate[Measured Part candidate]
-  Candidate --> Review[Creator review]
-  Review -->|approved example| Local
-  Local --> Queue[Full-film review queue]
-  Queue --> Render[Selective render]
-  Render --> Export[Picture-preserving export]
-```
+<p align="center">
+  <img src="docs/assets/orpheus-live-production-path.gif" alt="Animated Orpheus live production path showing Firebase Hosting, Cloud Run API and worker, Vertex AI, Cloud Storage, Grafana MCP, and Grafana Cloud" width="100%">
+</p>
+
+<p align="center"><sub><a href="docs/assets/orpheus-live-production-path.drawio">Open the editable Draw.io source</a> · Orange paths carry product requests; animated blue dashes carry media and jobs; animated gray dashes carry read-only evidence.</sub></p>
 
 | Layer | Responsibility |
 | --- | --- |
@@ -150,7 +141,7 @@ flowchart LR
 | `observability/` | Local Grafana, Loki, Tempo, Prometheus, dashboards, and alert rules. |
 | `deploy/` and `agent_engine/` | Hosted Firebase/Cloud Run/Agent Engine deployment definitions and operational runbooks. |
 
-The current hosted shape keeps browser delivery separate from long-running media work: Firebase Hosting serves the interface, Cloud Run owns API and worker execution, Agent Engine coordinates authorized turns, Cloud SQL/Cloud Storage own product records and media, and Grafana Cloud carries redacted evidence. The local workbench remains fully usable for import, local matching, review, and deterministic rendering without paid inference.
+The live deployment keeps browser delivery separate from long-running media work: Firebase Hosting serves the interface; `orpheus-api`, `grafana-mcp`, and `orpheus-worker` run on Cloud Run; and private GCS buckets hold media and runtime staging artifacts. The diagram marks Vertex/Agent Engine and Cloud SQL as configured boundaries rather than claiming an independently verified active instance. Grafana Cloud carries redacted evidence. The local workbench remains fully usable for import, local matching, review, and deterministic rendering without paid inference.
 
 ## Try the live workspace
 
@@ -234,4 +225,4 @@ ORPHEUS_DATA_DIR=/tmp/orpheus-a1 .venv/bin/python -m tools.validate_a1 data/fixt
 
 ## License and attribution
 
-Orpheus source code is licensed under [Apache-2.0](LICENSE). The README banner and animated decision loop are original repository assets generated from [`docs/assets/generate-readme-assets.py`](docs/assets/generate-readme-assets.py). Product screenshots show the Orpheus interface and a synthetic long-film fixture. Fixture and test media are not a claim of third-party media rights or production-quality Foley.
+Orpheus source code is licensed under [Apache-2.0](LICENSE). The README banner and animated decision loop are original repository assets generated from [`docs/assets/generate-readme-assets.py`](docs/assets/generate-readme-assets.py). The production-path GIF and editable Draw.io file are generated from [`docs/assets/generate-production-path.py`](docs/assets/generate-production-path.py); its Cloud Run, Cloud Storage, Vertex AI, and Cloud SQL icons come from the official [Google Cloud icon library](https://cloud.google.com/icons). Product screenshots show the Orpheus interface and a synthetic long-film fixture. Fixture and test media are not a claim of third-party media rights or production-quality Foley.
