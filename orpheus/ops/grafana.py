@@ -543,11 +543,26 @@ def dashboard():
         options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
         field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "NO DATA",
                "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}]}},
-        overrides=[
-            {"matcher": {"id": "byName", "options": "Awaiting your review"},
+        overrides=(
+            [
+                # A Loki instant vector carries no labels, so name each frame by its query.
+                {"matcher": {"id": "byFrameRefID", "options": ref},
+                 "properties": [{"id": "displayName", "value": label}]}
+                for ref, label in (
+                    ("A", "Awaiting your review"),
+                    ("B", "Accepted"),
+                    ("C", "Rejected"),
+                )
+            ]
+            if hosted
+            else []
+        ) + [
+            {"matcher": {"id": "byFrameRefID" if hosted else "byName",
+                         "options": "A" if hosted else "Awaiting your review"},
              "properties": [{"id": "thresholds", "value": {"mode": "absolute", "steps": [
                  {"color": green, "value": None}, {"color": amber, "value": 1}]}}]},
-            {"matcher": {"id": "byName", "options": "Rejected"},
+            {"matcher": {"id": "byFrameRefID" if hosted else "byName",
+                         "options": "C" if hosted else "Rejected"},
              "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#3A3F45"}}]},
         ],
         datasource=loki if hosted else prom,
