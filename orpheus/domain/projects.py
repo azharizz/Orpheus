@@ -147,7 +147,8 @@ def frames(case, times, directory):
                 if candidate.exists() and candidate.stat().st_size:
                     actual, path = attempt, candidate
                     break
-            except subprocess.SubprocessError:
+            except (subprocess.SubprocessError, OSError):
+                # ffmpeg can exit clean yet decode nothing near the final frame.
                 candidate.unlink(missing_ok=True)
         if path is None:
             raise ValueError("Frame could not be decoded")
