@@ -79,51 +79,48 @@ DOMAINS = (
     Domain("creator", (24, 104, 250, 842), "CREATOR", "browser control", "#8095AA"),
     Domain("delivery", (278, 104, 742, 386), "DELIVERY", "entry and API", "#76A6D7"),
     Domain("runtime", (764, 104, 1178, 474), "AGENT PLATFORM", "Runtime, state, preferences", "#E4A263"),
-    Domain("media", (278, 410, 742, 730), "MEDIA PIPELINE", "deterministic work", "#76A6D7"),
-    Domain("evidence", (764, 498, 1178, 730), "EVIDENCE PLANE", "read-only history", "#96A3B4"),
+    Domain("media", (278, 410, 742, 704), "MEDIA PIPELINE", "deterministic work", "#76A6D7"),
+    Domain("evidence", (764, 498, 1178, 704), "EVIDENCE PLANE", "read-only history", "#96A3B4"),
     Domain("external", (1202, 104, 1576, 842), "EXTERNAL ENDPOINTS", "no raw media", "#8A98A9"),
 )
 
 CARDS = (
-    Card("browser", 48, 400, 178, 142, "ORPHEUS WORKSPACE", ("Creator marks a Part", "and reviews results"), None, BLUE),
+    Card("browser", 48, 400, 178, 142, "ORPHEUS", ("Creator marks a Part", "and reviews results"), None, BLUE),
     Card("hosting", 310, 220, 178, 130, "FIREBASE HOSTING", ("Static web delivery", "Landing + workspace"), None, "#F9A825"),
     Card("api", 526, 220, 180, 130, "ORPHEUS API", ("Cloud Run service", "Runs + signed URLs"), "cloud-run", BLUE),
     Card("runtime", 808, 184, 326, 132, "AGENT RUNTIME", ("ADK coordinator", "Bounded Part turn"), "vertex-ai", ORANGE, "CONFIGURED"),
     Card("sessions", 790, 342, 168, 118, "AGENT SESSIONS", ("Run + turn history",), None, GOLD, "CONFIGURED"),
     Card("memory", 974, 342, 168, 118, "MEMORY BANK", ("Durable preferences",), None, GOLD, "OPT-IN"),
-    Card("worker", 310, 510, 178, 140, "ORPHEUS WORKER", ("Cloud Run Job", "FFmpeg + NumPy"), "cloud-run", MEDIA),
-    Card("storage", 526, 510, 180, 140, "MEDIA ARTIFACTS", ("Cloud Storage", "Source · takes · exports"), "cloud-storage", SAGE),
+    Card("worker", 310, 510, 178, 140, "WORKER", ("Cloud Run Job", "FFmpeg + NumPy"), "cloud-run", MEDIA),
+    Card("storage", 526, 510, 180, 140, "ARTIFACTS", ("Cloud Storage", "Source · takes · exports"), "cloud-storage", SAGE),
     Card("mcp", 840, 548, 220, 130, "GRAFANA MCP", ("Cloud Run service", "Scoped read-only tools"), "cloud-run", EVIDENCE),
     Card("provider", 1236, 184, 300, 132, "MODEL PROVIDER", ("Gemini hosted profile", "OpenRouter local test"), "vertex-ai", ORANGE, "CONFIGURED"),
     Card("grafana", 1236, 548, 300, 140, "GRAFANA CLOUD", ("Loki · Prometheus · Tempo", "Evidence, not media"), "grafana-icon", "#F46800"),
 )
 CARD = {card.key: card for card in CARDS}
 
-# Each animated path terminates at a service. Domains, cards, and dividers never march.
+# Every moving line represents a real service call. Telemetry branches join before Grafana.
 PATHS = (
-    ("product", [(226, 471), (268, 471), (268, 285), (310, 285)], ""),
-    ("product", [(488, 285), (526, 285)], ""),
-    ("product", [(706, 285), (808, 285)], "PART REQUEST"),
-    ("agent", [(1134, 248), (1236, 248)], "MODEL TURN"),
-    ("agent", [(880, 316), (880, 328), (874, 328), (874, 342)], "SESSION STATE"),
-    ("agent", [(1054, 316), (1054, 342)], "PREFERENCE READ / WRITE"),
-    ("media", [(616, 350), (616, 450), (399, 450), (399, 510)], "START JOB"),
-    ("media", [(488, 580), (526, 580)], "WRITE ARTIFACT"),
-    ("evidence", [(1134, 285), (1158, 285), (1158, 520), (950, 520), (950, 548)], "HISTORY QUERY"),
-    ("evidence", [(1060, 613), (1236, 613)], "READ-ONLY EVIDENCE"),
+    ("product", [(226, 471), (268, 471), (268, 285), (310, 285)], "", True),
+    ("product", [(488, 285), (526, 285)], "", True),
+    ("product", [(706, 285), (808, 285)], "", True),
+    ("agent", [(1134, 248), (1236, 248)], "", True),
+    ("agent", [(880, 316), (880, 328), (874, 328), (874, 342)], "", True),
+    ("agent", [(1054, 316), (1054, 342)], "", True),
+    ("agent", [(808, 300), (754, 300), (754, 478), (399, 478), (399, 510)], "START JOB", True),
+    ("media", [(488, 580), (526, 580)], "", True),
+    ("evidence", [(1134, 285), (1158, 285), (1158, 520), (950, 520), (950, 548)], "HISTORY QUERY", True),
+    ("evidence", [(1060, 613), (1236, 613)], "", True),
+    ("telemetry", [(706, 330), (724, 330), (724, 740)], "", False),
+    ("telemetry", [(1134, 300), (1150, 300), (1150, 740)], "", False),
+    ("telemetry", [(488, 630), (488, 740), (1200, 740), (1200, 660), (1236, 660)], "", True),
 )
 
 
 # The visible caption positions keep labels clear of every service card.
 LABEL_POSITIONS = {
-    "PART REQUEST": (714, 259),
-    "MODEL TURN": (1146, 222),
-    "SESSION STATE": (782, 318),
-    "PREFERENCE READ / WRITE": (973, 318),
-    "START JOB": (497, 421),
-    "WRITE ARTIFACT": (491, 555),
+    "START JOB": (520, 452),
     "HISTORY QUERY": (1036, 482),
-    "READ-ONLY EVIDENCE": (1082, 588),
 }
 
 
@@ -151,17 +148,18 @@ def dashed_segment(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple
         position += period
 
 
-def marching_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: str, offset: int) -> None:
+def marching_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: str, offset: int, arrow: bool = True) -> None:
     for first, second in zip(points, points[1:]):
         dashed_segment(draw, first, second, color, offset)
-    before, final = points[-2], points[-1]
-    angle = atan2(final[1] - before[1], final[0] - before[0])
-    arrow = [
-        final,
-        (final[0] - 10 * cos(angle - .48), final[1] - 10 * sin(angle - .48)),
-        (final[0] - 10 * cos(angle + .48), final[1] - 10 * sin(angle + .48)),
-    ]
-    draw.polygon(arrow, fill=color)
+    if arrow:
+        before, final = points[-2], points[-1]
+        angle = atan2(final[1] - before[1], final[0] - before[0])
+        tip = [
+            final,
+            (final[0] - 10 * cos(angle - .48), final[1] - 10 * sin(angle - .48)),
+            (final[0] - 10 * cos(angle + .48), final[1] - 10 * sin(angle + .48)),
+        ]
+        draw.polygon(tip, fill=color)
 
 
 def asset_path(name: str) -> Path:
@@ -237,17 +235,22 @@ def frame(index: int) -> Image.Image:
     text(draw, (24, 56), "One bounded Part becomes a reviewed, deterministic full-film decision.", MUTED, BODY)
     draw.rounded_rectangle((910, 18, 1576, 70), radius=6, fill=PANEL, outline=RULE)
     text(draw, (928, 31), "MARCHING DASHES = SERVICE-TO-SERVICE CALLS", INK, TINY)
-    text(draw, (928, 47), "Orange product · blue media · gold model · gray evidence · fixed domain borders", MUTED, SMALL)
+    text(draw, (928, 47), "Orange product · blue media · gold agent · green telemetry · gray evidence · fixed domains", MUTED, SMALL)
 
     # Fixed domains are deliberately solid and identical on every frame.
     draw_google_cloud_boundary(draw)
     for domain in DOMAINS:
         draw_domain(draw, domain)
 
-    # All actual links animate, but only the links between service cards.
-    colors = {"product": ORANGE, "agent": GOLD, "media": MEDIA, "evidence": EVIDENCE}
-    for kind, points, caption in PATHS:
-        marching_path(draw, points, colors[kind], offset)
+    # The telemetry lane is static context; only service-to-service paths march.
+    draw.rounded_rectangle((304, 716, 1150, 748), radius=6, fill="#F2FAF5", outline="#A8D5B5")
+    text(draw, (324, 724), "REDACTED TELEMETRY", SAGE, TINY)
+    text(draw, (484, 724), "API · AGENT RUNTIME · WORKER", MUTED, SMALL)
+
+    # All actual service links animate; domain and card borders remain still.
+    colors = {"product": ORANGE, "agent": GOLD, "media": MEDIA, "evidence": EVIDENCE, "telemetry": SAGE}
+    for kind, points, caption, arrow in PATHS:
+        marching_path(draw, points, colors[kind], offset, arrow)
         if caption:
             label(draw, LABEL_POSITIONS[caption], caption, colors[kind])
 
@@ -255,9 +258,9 @@ def frame(index: int) -> Image.Image:
     for card in CARDS:
         draw_card(image, card)
 
-    draw.rounded_rectangle((304, 760, 1150, 824), radius=8, fill=PANEL, outline=RULE)
-    text(draw, (324, 775), "CONFIGURED SUPPORTS", INK, H3)
-    text(draw, (324, 798), "Secret Manager keeps tokens server-side. Cloud SQL owns product/run records. Memory Bank stays explicit and opt-in.", MUTED, BODY)
+    draw.rounded_rectangle((304, 770, 1150, 834), radius=8, fill=PANEL, outline=RULE)
+    text(draw, (324, 785), "CONFIGURED SUPPORTS", INK, H3)
+    text(draw, (324, 808), "Secret Manager keeps tokens server-side. Cloud SQL owns product/run records. Memory Bank stays explicit and opt-in.", MUTED, BODY)
 
     draw.rounded_rectangle((24, 862, 1576, 912), radius=6, fill=PANEL, outline=RULE)
     text(draw, (44, 876), "Verified deployed: Firebase Hosting · orpheus-api · grafana-mcp · orpheus-worker · GCS media buckets. Configured: Agent Runtime + Sessions · Memory Bank opt-in · model provider · Cloud SQL.", MUTED, SMALL)
@@ -311,6 +314,8 @@ def write_drawio() -> None:
         cell(root, f"domain-label-{domain.key}", domain.title, label_style, x1 + 32, y1 + 16, x2 - x1 - 48, 20)
         cell(root, f"domain-note-{domain.key}", domain.note, note_style, x1 + 32, y1 + 36, x2 - x1 - 48, 18)
 
+    cell(root, "telemetry-lane", "<b>REDACTED TELEMETRY</b> · API · Agent Runtime · Worker", "rounded=1;html=1;fillColor=#F2FAF5;strokeColor=#A8D5B5;fontColor=#50667D;fontSize=11;align=left;verticalAlign=middle;spacingLeft=18;", 304, 716, 846, 32)
+
     card_ids: dict[str, str] = {}
     for card in CARDS:
         ident = f"card-{card.key}"
@@ -325,6 +330,7 @@ def write_drawio() -> None:
         "agent": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#D3912A;",
         "media": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#2F80ED;",
         "evidence": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#64748B;",
+        "telemetry": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=3;dashed=1;dashPattern=13 9;strokeColor=#5FAE7B;",
     }
     links = (
         ("edge-1", "browser", "hosting", "product"),
@@ -333,10 +339,13 @@ def write_drawio() -> None:
         ("edge-4", "runtime", "provider", "agent"),
         ("edge-5", "runtime", "sessions", "agent"),
         ("edge-6", "runtime", "memory", "agent"),
-        ("edge-7", "api", "worker", "media"),
+        ("edge-7", "runtime", "worker", "agent"),
         ("edge-8", "worker", "storage", "media"),
         ("edge-9", "runtime", "mcp", "evidence"),
         ("edge-10", "mcp", "grafana", "evidence"),
+        ("edge-11", "api", "grafana", "telemetry"),
+        ("edge-12", "runtime", "grafana", "telemetry"),
+        ("edge-13", "worker", "grafana", "telemetry"),
     )
     for ident, source, target, tone in links:
         cell(root, ident, "", styles[tone], 0, 0, 0, 0, False, card_ids[source], card_ids[target])

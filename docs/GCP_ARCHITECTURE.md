@@ -16,7 +16,7 @@ Firebase Hosting is optional. Choose it for static frontend CDN, SSL, previews, 
 
 ![Animated Orpheus live production path](assets/orpheus-live-production-path.gif)
 
-The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official Google Cloud legacy console icons and Grafana’s official icon. Marching dashes appear only on service-to-service paths: orange carries product requests, blue media/jobs, gold Agent Runtime/Session/Memory Bank calls, and gray scoped read-only evidence to Grafana. Domain borders stay fixed. The Agent Platform domain separates ADK Runtime, Agent Sessions, and the opt-in Memory Bank. Cards marked `DEPLOYED` were verified by the read-only deployment check on 2026-09-10; cards marked `CONFIGURED` describe the planned profile.
+The editable [Draw.io source](assets/orpheus-live-production-path.drawio) uses official Google Cloud legacy console icons and Grafana’s official icon. Marching dashes appear only on service-to-service paths: orange carries product requests, blue media/jobs, gold Agent Runtime/Session/Memory Bank calls, green redacted telemetry from the API, Agent Runtime, and Worker to Grafana Cloud, and gray scoped read-only evidence to Grafana. Domain borders stay fixed. Agent Runtime launches the Worker job through its authenticated tools. The Agent Platform domain separates ADK Runtime, Agent Sessions, and the opt-in Memory Bank. Cards marked `DEPLOYED` were verified by the read-only deployment check on 2026-09-10; cards marked `CONFIGURED` describe the planned profile.
 
 All application resources should start in one GCP region. Jakarta (`asia-southeast2`) is a reasonable default for an Indonesia-based operator, but the final region must be checked against Agent Engine, Cloud SQL, Firebase rewrite, and Grafana connectivity support.
 
@@ -72,7 +72,7 @@ Sessions and Memory Bank storage/operations are billable under the current prici
 2. The API creates a run record in Cloud SQL and returns short-lived signed URLs for media upload.
 3. The browser uploads source media directly to Cloud Storage; buckets remain private.
 4. The API starts or resumes the Agent Engine Session with the project and run identifiers.
-5. Agent Runtime calls authenticated application tools. Those tools request a Cloud Run Job for deterministic media work.
+5. Agent Runtime calls authenticated application tools, which launch a Cloud Run Job for deterministic media work.
 6. The media job downloads from Cloud Storage, processes in temporary local disk, writes artifacts back to Cloud Storage, and records metadata in Cloud SQL.
 7. The agent queries Grafana MCP for scoped history, sound, take, failure, or runtime evidence.
 8. The agent may propose a bounded revision. The API exposes status by run ID through polling or a streaming endpoint.

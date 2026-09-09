@@ -147,7 +147,7 @@ Raw media, prompts, credentials, and free-form provider output do not belong in 
 | `observability/` | Local Grafana, Loki, Tempo, Prometheus, dashboards, and alert rules. |
 | `deploy/` and `agent_engine/` | Hosted Firebase/Cloud Run/Agent Engine deployment definitions and operational runbooks. |
 
-The live deployment keeps browser delivery separate from long-running media work: Firebase Hosting serves the interface; `orpheus-api`, `grafana-mcp`, and `orpheus-worker` run on Cloud Run; and private GCS buckets hold media and runtime staging artifacts. The diagram marks Vertex/Agent Engine and Cloud SQL as configured boundaries rather than claiming an independently verified active instance. Grafana Cloud carries redacted evidence. The local workbench remains fully usable for import, local matching, review, and deterministic rendering without paid inference.
+The live deployment keeps browser delivery separate from long-running media work: Firebase Hosting serves the interface; `orpheus-api`, `grafana-mcp`, and `orpheus-worker` run on Cloud Run; and private GCS buckets hold media and runtime staging artifacts. Agent Runtime launches bounded Worker jobs for deterministic fit work. The diagram marks Vertex/Agent Engine and Cloud SQL as configured boundaries rather than claiming an independently verified active instance. Grafana Cloud receives redacted telemetry from the API, Agent Runtime, and Worker; the agent reads scoped history through Grafana MCP. The local workbench remains fully usable for import, local matching, review, and deterministic rendering without paid inference.
 
 ## Try the live workspace
 
